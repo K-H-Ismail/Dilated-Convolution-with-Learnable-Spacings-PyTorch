@@ -10,12 +10,8 @@ torch::Tensor dcls_cuda_forward(
     torch::Tensor input,    
     torch::Tensor weight,
     torch::Tensor P1,
-    torch::Tensor rest1,
     torch::Tensor P2,
-    torch::Tensor rest2,
     torch::Tensor bias,
-    const int channel_out, const int channel_in,
-    const int kernel_h, const int kernel_w,
     const int dilation_h, const int dilation_w, 
     const int stride_h, const int stride_w, 
     const int padding_h, const int padding_w, 
@@ -25,13 +21,9 @@ std::vector<torch::Tensor> dcls_cuda_backward(
     torch::Tensor input,    
     torch::Tensor weight,
     torch::Tensor P1,
-    torch::Tensor rest1,
     torch::Tensor P2,
-    torch::Tensor rest2,
     torch::Tensor grad_output,      
     torch::Tensor bias,
-    const int channel_out, const int channel_in,
-    const int kernel_h, const int kernel_w,
     const int dilation_h, const int dilation_w, 
     const int stride_h, const int stride_w, 
     const int padding_h, const int padding_w, 
@@ -47,12 +39,8 @@ torch::Tensor dcls_forward(
     torch::Tensor input,    
     torch::Tensor weight,
     torch::Tensor P1,
-    torch::Tensor rest1,
     torch::Tensor P2,
-    torch::Tensor rest2,
     torch::Tensor bias,
-    const int channel_out, const int channel_in,
-    const int kernel_h, const int kernel_w,
     const int dilation_h, const int dilation_w, 
     const int stride_h, const int stride_w, 
     const int padding_h, const int padding_w, 
@@ -61,21 +49,15 @@ torch::Tensor dcls_forward(
     CHECK_INPUT(input);    
     CHECK_INPUT(weight);
     CHECK_INPUT(P1);
-    CHECK_INPUT(rest1);
     CHECK_INPUT(P2);
-    CHECK_INPUT(rest2);
     CHECK_INPUT(bias);
 
 
     return dcls_cuda_forward(input, 
                               weight, 
                               P1, 
-                              rest1,
                               P2,
-                              rest2,
                               bias,
-                              channel_out, channel_in,
-                              kernel_h, kernel_w,
                               dilation_h, dilation_w,
                               stride_h, stride_w,
                               padding_h, padding_w,
@@ -86,13 +68,9 @@ std::vector<torch::Tensor> dcls_backward(
     torch::Tensor input,    
     torch::Tensor weight,
     torch::Tensor P1,
-    torch::Tensor rest1,
     torch::Tensor P2,
-    torch::Tensor rest2,
     torch::Tensor grad_output,      
     torch::Tensor bias,
-    const int channel_out, const int channel_in,
-    const int kernel_h, const int kernel_w,
     const int dilation_h, const int dilation_w, 
     const int stride_h, const int stride_w, 
     const int padding_h, const int padding_w, 
@@ -101,22 +79,16 @@ std::vector<torch::Tensor> dcls_backward(
     CHECK_INPUT(input);    
     CHECK_INPUT(weight);
     CHECK_INPUT(P1);
-    CHECK_INPUT(rest1);
     CHECK_INPUT(P2);
-    CHECK_INPUT(rest2);
     CHECK_INPUT(grad_output);    
     CHECK_INPUT(bias);
 
     return dcls_cuda_backward(input, 
                               weight, 
                               P1, 
-                              rest1,
                               P2,
-                              rest2,
                               grad_output,
                               bias,
-                              channel_out, channel_in,
-                              kernel_h, kernel_w,
                               dilation_h, dilation_w,
                               stride_h, stride_w,
                               padding_h, padding_w,
