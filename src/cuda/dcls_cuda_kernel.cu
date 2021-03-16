@@ -41,15 +41,44 @@ __device__ __forceinline__ scalar_t d_ceil(const scalar_t z, const scalar_t sigm
   return s;
 }
 
+template <typename scalar_t>
+__global__ void interpolation_kernel(
+    const int n,
+    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> weight,
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> W1, 
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> W2,
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> W3, 
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> W4,
+    const int ch_in, const int ch_out,
+    const int kernel_h, const int kernel_w,
+    scalar_t* interpolated_weight) {
+  CUDA_KERNEL_LOOP(index, n) {
+    int w_out = index % kernel_w;
+    int h_out = (index / kernel_w) % kernel_h;
+    int channel_in = (index / kernel_h / kernel_w) % ch_in;
+    int channel_out = (index / kernel_h / kernel_w / ch_in) % ch_out;
+    
+    scalar_t w_val = weight[channel_out][channel_in][h_out][w_out];
+      
+    scalar_t* col = interpolated_weight + ((channel_out * ch_in + channel_in) * kernel_h + h_out) * kernel_w + w_out;
+
+    
+    *(col + kernel_h * kernel_w * (3*channel_in + 3*ch_in*channel_out)) = w_val * W1[channel_in][h_out][w_out];
+    *(col + kernel_h * kernel_w * (3*channel_in + 1 + 3*ch_in*channel_out)) = w_val * W2[channel_in][h_out][w_out];
+    *(col + kernel_h * kernel_w * (3*channel_in + 2 + 3*ch_in*channel_out)) = w_val * W3[channel_in][h_out][w_out];
+    *(col + kernel_h * kernel_w * (3*channel_in + 3 + 3*ch_in*channel_out)) = w_val * W4[channel_in][h_out][w_out];
+
+
+  }
+}
+
 
 template <typename scalar_t>
 __global__ void im2col_kernel(
     const int n,
     const scalar_t* input, 
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> P_h, 
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> P_w,
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> rest_h, 
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> rest_w,
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> P_h, 
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> P_w,
     const int height_in, const int width_in,
     const int ch_in, const int ch_out,
     const int kernel_h, const int kernel_w,
@@ -57,6 +86,7 @@ __global__ void im2col_kernel(
     const int pad_h, const int pad_w,
     const int stride_h, const int stride_w,
     const int dilation_h, const int dilation_w,
+    const int groups,    
     scalar_t* data_col) {
   CUDA_KERNEL_LOOP(index, n) {
     int w_out = index % width_out;
@@ -65,7 +95,7 @@ __global__ void im2col_kernel(
 
     int h_out = idx % height_out;
     int channel_in = (idx / height_out)% ch_in;
-    int channel_out = channel_in * kernel_h * kernel_w;
+    int channel_out = channel_in * kernel_h * kernel_w  ;
     int h_in = h_out * stride_h - pad_h;
     int w_in = w_out * stride_w - pad_w;
 
@@ -74,26 +104,19 @@ __global__ void im2col_kernel(
 
     for (int i = 0; i < kernel_h; ++i) {
       for (int j = 0; j < kernel_w; ++j) {
-        int l_dilation_h = static_cast<int>(P_h[0][channel_in][i][j]) ;//i * dilation_h;
-        int l_dilation_w = static_cast<int>(P_w[0][channel_in][i][j]) ;//j * dilation_w;
-        scalar_t r1 = rest_h[0][channel_in][i][j] ;
-        scalar_t r2 = rest_w[0][channel_in][i][j] ;
+        int l_dilation_h = static_cast<int>(P_h[channel_in/groups][i][j]) ;//i * dilation_h;
+        int l_dilation_w = static_cast<int>(P_w[channel_in/groups][i][j]) ;//j * dilation_w;
           
         int h = h_in + l_dilation_h;
         int w = w_in + l_dilation_w;
           
         if (h >= 0 && w >= 0 && h < height_in && w < width_in) {
-            *col = im[l_dilation_h * width_in + l_dilation_w] * (1-r1) * (1-r2);
-        }
-        else if (h >= 1 && w >= 0 && h < (height_in+1) && w < width_in) {            
-            *col = im[l_dilation_h * width_in + l_dilation_w] * (r1) * (1-r2);
-        }
-        else if (h >= 1 && w >= 1 && h < (height_in+1) && w < (width_in+1)) {            
-            *col = im[l_dilation_h * width_in + l_dilation_w] * (r1) * (r2);
-        }
-        else if (h >= 0 && w >= 1 && h < height_in && w < (width_in+1)) {            
-            *col = im[l_dilation_h * width_in + l_dilation_w] * (1-r1) * (r2);
-        }          
+            scalar_t im_val = im[l_dilation_h * width_in + l_dilation_w];
+            *(col + height_out * width_out * kernel_h * kernel_w * 3*channel_in) = im_val;
+            *(col + height_out * width_out * kernel_h * kernel_w * (3*channel_in+1)) = im_val;
+            *(col + height_out * width_out * kernel_h * kernel_w * (3*channel_in+2)) = im_val;
+            *(col + height_out * width_out * kernel_h * kernel_w * (3*channel_in+3)) = im_val;
+        }       
         else {
             *col = static_cast<scalar_t>(0);
         }
@@ -112,8 +135,8 @@ __global__ void col2im_kernel(
     const scalar_t* data_col,
     const scalar_t* P_h, 
     const scalar_t* P_w,
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> rest_h, 
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> rest_w,    
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> rest_h, 
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> rest_w,    
     const int height,
     const int width,
     const int channels,
@@ -169,18 +192,19 @@ __global__ void col2im_kernel(
 template <typename scalar_t>
 __global__ void col2im_position_kernel1(
     const int n,
-    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> grad_output_n,
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> weight,    
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> P_h, 
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> P_w,    
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> rest_h, 
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> rest_w,     
+    const scalar_t* data_col,    
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> P_h, 
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> P_w,    
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> rest_h, 
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> rest_w,     
     const int channels_out,
     const int channels_in,
     const int kernel_h,
     const int kernel_w,
     const int half_range_bot_h,
-    const int half_range_top_h,    
+    const int half_range_top_h,   
+    const int height_col,
+    const int width_col,    
     scalar_t* data_im) 
 {
   CUDA_KERNEL_LOOP(index, n) {
@@ -188,27 +212,20 @@ __global__ void col2im_position_kernel1(
     const int w_im = index % kernel_w;
     const int h_im = (index / kernel_w) % kernel_h;
     const int c_im = (index / (kernel_w * kernel_h)) % channels_in;
-    const int co_im = (index / (kernel_w * kernel_h * channels_in)) % channels_out;
       
 
-    const int p_h = P_h[co_im][c_im][h_im][w_im];
-    const int p_w = P_w[co_im][c_im][h_im][w_im];
-    const scalar_t r_h = rest_h[co_im][c_im][h_im][w_im];
-    const scalar_t r_w = rest_w[co_im][c_im][h_im][w_im];
-    const int p_h_prev = (p_h < 1) ? 0 : (p_h - 1);
-    const int p_w_prev = (p_w < 1) ? 0 : (p_w - 1);       
+    const int p_h = P_h[c_im][h_im][w_im];
+    const int p_w = P_w[c_im][h_im][w_im];
+     
       
-    const scalar_t sigma = static_cast<scalar_t>(0.5);    
-    const scalar_t ceiled_p_h = d_ceil(static_cast<scalar_t>(p_h), sigma, half_range_bot_h, half_range_top_h);
-            
-    val =  weight[co_im][c_im][h_im][w_im];
-    val = val * ( grad_output_n[co_im][p_h][p_w] * (1-ceiled_p_h) * (1-r_w) +
-                  grad_output_n[co_im][p_h_prev][p_w] * (ceiled_p_h-1) * (1-r_w) +
-                  grad_output_n[co_im][p_h][p_w_prev] * (1-ceiled_p_h) * r_w +
-                  grad_output_n[co_im][p_h_prev][p_w_prev] * (ceiled_p_h-1) * r_w );
-    
-            
-    data_im[index] = static_cast<scalar_t>(val);
+
+      
+     
+    int index_h_w = (((c_im * kernel_h + 1) * kernel_w + 1) * height_col + p_h) * width_col + p_w;
+
+    val += data_col[index_h_w] ;
+
+    data_im[index] = static_cast<scalar_t>(val);     
       
       
   }
@@ -217,18 +234,19 @@ __global__ void col2im_position_kernel1(
 template <typename scalar_t>
 __global__ void col2im_position_kernel2(
     const int n,
-    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> grad_output_n,
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> weight,    
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> P_h, 
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> P_w,    
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> rest_h, 
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> rest_w,     
+    const scalar_t* data_col,   
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> P_h, 
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> P_w,    
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> rest_h, 
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> rest_w,     
     const int channels_out,
     const int channels_in,
     const int kernel_h,
     const int kernel_w,
     const int half_range_bot_w,
-    const int half_range_top_w,    
+    const int half_range_top_w,   
+    const int height_col,
+    const int width_col,    
     scalar_t* data_im) 
 {
   CUDA_KERNEL_LOOP(index, n) {
@@ -236,26 +254,18 @@ __global__ void col2im_position_kernel2(
     const int w_im = index % kernel_w;
     const int h_im = (index / kernel_w) % kernel_h;
     const int c_im = (index / (kernel_w * kernel_h)) % channels_in;
-    const int co_im = (index / (kernel_w * kernel_h * channels_in)) % channels_out;
       
 
-    const int p_h = P_h[co_im][c_im][h_im][w_im];
-    const int p_w = P_w[co_im][c_im][h_im][w_im];
-    const scalar_t r_h = rest_h[co_im][c_im][h_im][w_im];
-    const scalar_t r_w = rest_w[co_im][c_im][h_im][w_im];
-    const int p_h_prev = (p_h < 1) ? 0 : (p_h - 1);
-    const int p_w_prev = (p_w < 1) ? 0 : (p_w - 1);      
+    const int p_h = P_h[c_im][h_im][w_im];
+    const int p_w = P_w[c_im][h_im][w_im];
 
-    const scalar_t sigma = static_cast<scalar_t>(0.5);       
-    const scalar_t ceiled_p_w = d_ceil(static_cast<scalar_t>(p_w), sigma, half_range_bot_w, half_range_top_w);
       
-    val =  weight[co_im][c_im][h_im][w_im];
-    val = val * ( grad_output_n[co_im][p_h][p_w] * (1-r_h) * (1-ceiled_p_w) +
-                  grad_output_n[co_im][p_h_prev][p_w] * r_h * (1-ceiled_p_w) +
-                  grad_output_n[co_im][p_h][p_w_prev] * (1-r_h) * (ceiled_p_w-1) +
-                  grad_output_n[co_im][p_h_prev][p_w_prev] * r_h * (ceiled_p_w-1) );
+       
+    int index_h_w = (((c_im * kernel_h + 1) * kernel_w + 1) * height_col + p_h) * width_col + p_w;
+   
+    val += data_col[index_h_w] ;
     
-            
+
     data_im[index] = static_cast<scalar_t>(val);
       
       
@@ -287,10 +297,10 @@ torch::Tensor  dcls_cuda_forward(
     
 
     const int half_range_bot_h = dilation_h*kernel_h/2;
-    const int half_range_top_h = half_range_bot_h - (half_range_bot_h + 1)%2;
+    const int half_range_top_h = half_range_bot_h - (dilation_h*kernel_h + 1)%2;
 
     const int half_range_bot_w = dilation_w*kernel_w/2;
-    const int half_range_top_w = half_range_bot_w - (half_range_bot_w + 1)%2;
+    const int half_range_top_w = half_range_bot_w - (dilation_w*kernel_w +1)%2;
     
     auto P_h = at::clamp(at::ceil(P1),-half_range_bot_h,half_range_top_h);
     auto rest_h = P_h - at::clamp(P1,-half_range_bot_h,half_range_top_h);
@@ -298,33 +308,49 @@ torch::Tensor  dcls_cuda_forward(
     auto P_w = at::clamp(at::ceil(P2),-half_range_bot_w,half_range_top_w);
     auto rest_w = P_w - at::clamp(P2,-half_range_bot_w,half_range_top_w);
     
-    P_h += dilation_h*(kernel_h/2);
-    P_w += dilation_w*(kernel_w/2);
+    P_h += dilation_h*kernel_h/2;
+    P_w += dilation_w*kernel_w/2;
+   
+    auto ones = at::ones_like(rest_h, input.options());    
+    auto W1 = (ones - rest_h) * (ones - rest_w);
+    auto W2 = rest_h * (ones - rest_w);
+    auto W3 = (ones - rest_h) * rest_w;
+    auto W4 = rest_h * rest_w;
+    auto interpolated_weight = at::empty({channels_out, channels_in/groups, 2 * kernel_h, 2 * kernel_w}, input.options());
     
+    const int num_kernels_interpolation = channels_in/groups * channels_out * kernel_h * kernel_w;
+    AT_DISPATCH_FLOATING_TYPES(input.type(), "dcls_forward_cuda", [&] {
+        interpolation_kernel<scalar_t><<<GET_BLOCKS(num_kernels_interpolation), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
+                                     num_kernels_interpolation,
+                                     weight.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+                                     W1.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                     W2.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                     W3.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                     W4.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                     channels_in/groups, channels_out,
+                                     kernel_h, kernel_w, 
+                                     interpolated_weight.data<scalar_t>());
+    });
 
     // prepare group weight and bias
-    auto weight_g = weight.view({groups, channels_out/groups, channels_in/groups, kernel_h, kernel_w});
+    auto weight_g = interpolated_weight.view({groups, channels_out/groups, channels_in/groups, 2*kernel_h, 2*kernel_w});
     auto bias_g = bias.view({groups, channels_out/groups});
     
-    auto output = torch::zeros({batch, channels_out , height_out , width_out}, input.options());
-    
+    auto output = torch::empty({batch, channels_out , height_out , width_out}, input.options());
     const int num_kernels = channels_in * height_out * width_out;
-
     AT_DISPATCH_FLOATING_TYPES(input.type(), "dcls_forward_cuda", [&] {
 
         for (int elt = 0; elt < batch; elt++) {
 
             auto input_n = input.select(0, elt);
             auto output_n = output.select(0, elt);
-            auto columns = at::empty({channels_in * kernel_h * kernel_w, height_out * width_out}, input.options());
+            auto columns = at::zeros({channels_in * 2 * kernel_h * 2 * kernel_w, height_out * width_out}, input.options());
 
             im2col_kernel<scalar_t><<<GET_BLOCKS(num_kernels), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
                                              num_kernels,
                                              input_n.data<scalar_t>(),
-                                             P_h.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                             P_w.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                             rest_h.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                             rest_w.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+                                             P_h.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                             P_w.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
                                              height, width,
                                              channels_in, channels_out,
                                              kernel_h, kernel_w, 
@@ -332,14 +358,14 @@ torch::Tensor  dcls_cuda_forward(
                                              padding_h, padding_w, 
                                              stride_h, stride_w, 
                                              dilation_h, dilation_w,
+                                             groups,
                                              columns.data<scalar_t>());
-           
-            auto columns_g = columns.view({groups, channels_in/groups * kernel_h * kernel_w, height_out * width_out});
+            auto columns_g = columns.view({groups, channels_in/groups * 2 * kernel_h * 2 * kernel_w, height_out * width_out});
             auto output_g = output_n.view({groups, channels_out/groups, height_out * width_out});
             for (int g = 0; g < groups; ++g)
             {
                 auto columns_gm = columns_g.select(0, g);
-                auto weight_gm = weight_g.select(0, g).view({channels_out/groups, channels_in/groups * kernel_h * kernel_w});
+                auto weight_gm = weight_g.select(0, g).view({channels_out/groups, channels_in/groups * 2 * kernel_h * 2 * kernel_w});
                 auto output_m = at::addmm(bias_g.select(0, g).view({channels_out/groups,1}),weight_gm, columns_gm);
                 output_g.select(0, g) = output_m;
             }
@@ -387,10 +413,10 @@ std::vector<torch::Tensor> dcls_cuda_backward(
     const int width_out = (width + 2 * padding_w - (dilation_w * (kernel_w - 1) + 1)) / stride_w + 1;
     
     const int half_range_bot_h = dilation_h*kernel_h/2;
-    const int half_range_top_h = half_range_bot_h - (half_range_bot_h + 1)%2;
+    const int half_range_top_h = half_range_bot_h - (dilation_h*kernel_h+1)%2;
 
     const int half_range_bot_w = dilation_w*kernel_w/2;
-    const int half_range_top_w = half_range_bot_w - (half_range_bot_w + 1)%2;
+    const int half_range_top_w = half_range_bot_w - (dilation_w*kernel_w+1)%2;
     
     auto P_h = at::clamp(at::ceil(P1),-half_range_bot_h,half_range_top_h);
     auto rest_h = P_h - at::clamp(P1,-half_range_bot_h,half_range_top_h);
@@ -398,8 +424,29 @@ std::vector<torch::Tensor> dcls_cuda_backward(
     auto P_w = at::clamp(at::ceil(P2),-half_range_bot_w,half_range_top_w);
     auto rest_w = P_w - at::clamp(P2,-half_range_bot_w,half_range_top_w);
     
-    P_h += dilation_h*(kernel_h/2);
-    P_w += dilation_w*(kernel_w/2);
+    P_h += dilation_h*kernel_h/2;
+    P_w += dilation_w*kernel_w/2;
+    
+    auto ones_r = at::ones_like(rest_h, input.options());    
+    auto W1 = (ones_r - rest_h) * (ones_r - rest_w);
+    auto W2 = rest_h * (ones_r - rest_w);
+    auto W3 = (ones_r - rest_h) * rest_w;
+    auto W4 = rest_h * rest_w;
+    auto interpolated_weight = at::empty({channels_out, channels_in/groups, 2 * kernel_h, 2 * kernel_w}, input.options());
+    
+    const int num_kernels_interpolation = channels_in/groups * channels_out * kernel_h * kernel_w;
+    AT_DISPATCH_FLOATING_TYPES(input.type(), "dcls_forward_cuda", [&] {
+        interpolation_kernel<scalar_t><<<GET_BLOCKS(num_kernels_interpolation), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
+                                     num_kernels_interpolation,
+                                     weight.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+                                     W1.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                     W2.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                     W3.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                     W4.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                     channels_in/groups, channels_out,
+                                     kernel_h, kernel_w, 
+                                     interpolated_weight.data<scalar_t>());
+    });
     
     
     // prepare group weight and bias
@@ -409,8 +456,8 @@ std::vector<torch::Tensor> dcls_cuda_backward(
     auto ones = at::ones({height_out * width_out}, input.options());
     
     const int num_kernels = channels_in * height * width;
-    const int num_kernels_grad = channels_out * channels_in * kernel_h * kernel_w;
-    
+    const int num_kernels_grad = channels_in * kernel_h * kernel_w;
+    const int num_kernels_im = channels_in * height_out * width_out;
     
     
     AT_DISPATCH_FLOATING_TYPES(input.type(), "dcls_backward_cuda", [&] {
@@ -437,28 +484,28 @@ std::vector<torch::Tensor> dcls_cuda_backward(
             
             col2im_position_kernel1<scalar_t><<<GET_BLOCKS(num_kernels_grad), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
                                              num_kernels_grad,
-                                             grad_output_n.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
-                                             weight.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                             P_h.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                             P_w.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                             rest_h.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                             rest_w.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+                                             columns.data<scalar_t>(),
+                                             P_h.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                             P_w.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                             rest_h.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                             rest_w.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
                                              channels_out, channels_in,                
                                              kernel_h, kernel_w,
                                              half_range_bot_h, half_range_top_h,
+                                             height_out, width_out,                 
                                              grad_P1.data<scalar_t>());
             
             col2im_position_kernel2<scalar_t><<<GET_BLOCKS(num_kernels_grad), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
                                              num_kernels_grad,
-                                             grad_output_n.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
-                                             weight.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                             P_h.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                             P_w.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                             rest_h.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),                
-                                             rest_w.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),                
+                                             columns.data<scalar_t>(),
+                                             P_h.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                             P_w.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                             rest_h.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),                
+                                             rest_w.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),                
                                              channels_out, channels_in,               
                                              kernel_h, kernel_w,
-                                             half_range_bot_w, half_range_top_w,             
+                                             half_range_bot_w, half_range_top_w,
+                                             height_out, width_out,                 
                                              grad_P2.data<scalar_t>());                
             
             col2im_kernel<scalar_t><<<GET_BLOCKS(num_kernels), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
@@ -466,8 +513,8 @@ std::vector<torch::Tensor> dcls_cuda_backward(
                                              columns.data<scalar_t>(),
                                              P_h.data<scalar_t>(),
                                              P_w.data<scalar_t>(),
-                                             rest_h.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                             rest_w.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+                                             rest_h.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                             rest_w.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
                                              height, width,
                                              channels_out,
                                              kernel_h, kernel_w, 
@@ -477,13 +524,11 @@ std::vector<torch::Tensor> dcls_cuda_backward(
                                              height_out, width_out,                
                                              grad_input_n.data<scalar_t>());
             
-            im2col_kernel<scalar_t><<<GET_BLOCKS(num_kernels), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
-                                             channels_in * height_out * width_out,
+            /*im2col_kernel<scalar_t><<<GET_BLOCKS(num_kernels_im), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
+                                             num_kernels_im,
                                              input_n.data<scalar_t>(),
-                                             P_h.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                             P_w.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                             rest_h.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                             rest_w.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+                                             P_h.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                             P_w.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
                                              height, width,
                                              channels_in, channels_out,               
                                              kernel_h, kernel_w, 
@@ -491,7 +536,8 @@ std::vector<torch::Tensor> dcls_cuda_backward(
                                              padding_h, padding_w, 
                                              stride_h, stride_w, 
                                              dilation_h, dilation_w,
-                                             columns.data<scalar_t>());
+                                             groups,
+                                             columns.data<scalar_t>());*/
             
       
 
