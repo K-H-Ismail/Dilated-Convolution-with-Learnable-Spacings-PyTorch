@@ -20,21 +20,21 @@ class Dcls2d(Module):
 
       P1 = torch.zeros(self.in_channels // self.groups,self.kernel_size[0],self.kernel_size[1])
       for i in range(self.kernel_size[0]):
-        P1[:,i,:] = -int(self.kernel_size[0] * self.dilation[0] /2) + i*self.dilation[0]
+        P1[:,i,:] = -int(self.kernel_size[0] * self.dilation[0] /2) + i*self.dilation[0] 
         #if i in [0,1]:
-        #    P1[:,i,:] = P1[:,i,:] + 0.5             
+        #    P1[:,i,:] = P1[:,i,:] + 0.8             
         #else:
-        #    P1[:,i,:] = P1[:,i,:] - 0.5
+        #    P1[:,i,:] = P1[:,i,:] - 0.8
       self.P1 = torch.nn.Parameter(P1, requires_grad=True)
 
       P2 = torch.zeros(self.in_channels // self.groups,self.kernel_size[0],self.kernel_size[1])
       for i in range(self.kernel_size[1]):
-        P2[:,:,i] = -int(self.kernel_size[1] * self.dilation[1] /2) + i*self.dilation[1]
+        P2[:,:,i] = -int(self.kernel_size[1] * self.dilation[1] /2) + i*self.dilation[1]  
 
         #if i in [0,1] :
-        #    P2[:,:,i] = P2[:,:,i] + 0.5             
+        #    P2[:,:,i] = P2[:,:,i] + 0.75             
         #else: 
-         #   P2[:,:,i] = P2[:,:,i] - 0.5
+        #    P2[:,:,i] = P2[:,:,i] - 0.75
       self.P2 = torch.nn.Parameter(P2, requires_grad=True)
       #init.uniform_(self.P1,a=-(self.kernel_size[0]*self.dilation[0])//2, b=(self.kernel_size[0]*self.dilation[0]-1)//2)
       #init.uniform_(self.P2,a=-(self.kernel_size[1]*self.dilation[1])//2, b=(self.kernel_size[1]*self.dilation[1]-1)//2)
