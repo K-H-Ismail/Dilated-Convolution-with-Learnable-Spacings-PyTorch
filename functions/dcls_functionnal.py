@@ -52,7 +52,7 @@ class SurrogateDilation(torch.autograd.Function):
                                    ctx.groups)
         
         grad_input, grad_weight, grad_P1, grad_P2, grad_bias = outputs
-    
+
         return grad_input, grad_weight, grad_P1, grad_P2, grad_bias, None, None, None, None
 
    

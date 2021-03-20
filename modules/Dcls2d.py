@@ -56,7 +56,7 @@ class Dcls2d(Module):
     self.out_channels = out_channels
     self.kernel_size =  kernel_size
     self.dilation = dilation
-    self.bias = Parameter(torch.Tensor(out_channels))
+    self.bias = Parameter(torch.zeros(out_channels))
     
     if bias is None:
         self.bias.data = torch.zeros(out_channels).data
