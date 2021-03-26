@@ -394,8 +394,8 @@ std::vector<torch::Tensor> dcls_cuda_backward(
     
     auto grad_input = torch::zeros_like(input);      
     auto grad_weight = torch::zeros_like(weight);
-    auto grad_P1 = torch::zeros_like(P1);
-    auto grad_P2 = torch::zeros_like(P2);    
+    //auto grad_P1 = torch::zeros_like(P1);
+    //auto grad_P2 = torch::zeros_like(P2);    
     auto grad_bias = torch::zeros_like(bias);
     
     
@@ -407,7 +407,8 @@ std::vector<torch::Tensor> dcls_cuda_backward(
     const int channels_out = weight.size(0);
     const int kernel_h = weight.size(2);
     const int kernel_w = weight.size(3);
-    
+    auto grad_P1 = at::zeros({ channels_in/groups,  kernel_h , kernel_w}, input.options());
+    auto grad_P2 = at::zeros({ channels_in/groups,  kernel_h , kernel_w}, input.options());
     const int height_out = (height + 2 * padding_h - (dilation_h * (kernel_h - 1) + 1)) / stride_h + 1;
     const int width_out = (width + 2 * padding_w - (dilation_w * (kernel_w - 1) + 1)) / stride_w + 1;
     
@@ -543,33 +544,27 @@ std::vector<torch::Tensor> dcls_cuda_backward(
             grad_bias_g.select(0, g) = at::addmv(grad_bias_gm, grad_output_gm, ones);
         }
         grad_weight = grad_weight_g.view({channels_out, channels_in/groups, kernel_h, kernel_w});
+        
+        /*auto interpolated_grad_weight = torch::zeros_like(interpolated_weight_P_h);
+        AT_DISPATCH_FLOATING_TYPES(input.type(), "dcls_backward_cuda", [&] {
+        interpolation_kernel<scalar_t><<<GET_BLOCKS(num_kernels_interpolation), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
+                                     num_kernels_interpolation,
+                                     grad_weight.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
+                                     ones_r.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                     ones_r.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                     ones_r.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                     ones_r.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                     channels_in/groups, channels_out,
+                                     kernel_h, kernel_w, 
+                                     interpolated_grad_weight.data<scalar_t>());
+        }); */           
 
-        /*gather_kernel<scalar_t><<<GET_BLOCKS(num_kernels_interpolation), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
-                                 channels_in/groups * channels_out * kernel_h * kernel_w,
-                                 grad_weight_int_g.data<scalar_t>(),
-                                 channels_in/groups, channels_out,
-                                 kernel_h, kernel_w, 
-                                 grad_weight.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>());*/
+        auto grad_Ph = interpolated_weight_P_h.view({channels_out, channels_in/groups* kernel_h* 4*kernel_w}); 
+        auto grad_Pw = interpolated_weight_P_w.view({channels_out, channels_in/groups* kernel_h* 4*kernel_w});
+        auto grad_w = grad_weight.view({channels_out, channels_in/groups* kernel_h* kernel_w});
 
-        /*gather_kernel<scalar_t><<<GET_BLOCKS(num_kernels_interpolation), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
-                                 channels_in/groups * channels_out * kernel_h * kernel_w,
-                                 interpolated_weight_P_h.data<scalar_t>(),
-                                 channels_in/groups, channels_out,
-                                 kernel_h, kernel_w, 
-                                 grad_Ph.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>());
-
-        gather_kernel<scalar_t><<<GET_BLOCKS(num_kernels_interpolation), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
-                                 channels_in/groups * channels_out * kernel_h * kernel_w,
-                                 interpolated_weight_P_w.data<scalar_t>(),
-                                 channels_in/groups, channels_out,
-                                 kernel_h, kernel_w, 
-                                 grad_Pw.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>());*/ 
-
-        auto grad_Ph = interpolated_weight_P_h.view({channels_out, channels_in/groups* kernel_h* kernel_w,4}).sum({2}); 
-        auto grad_Pw = interpolated_weight_P_w.view({channels_out, channels_in/groups* kernel_h* kernel_w,4}).sum({2});
-
-        grad_P1 += at::mm(grad_weight.view({channels_out, channels_in/groups* kernel_h* kernel_w}).t(), grad_Ph.view({channels_out, channels_in/groups * kernel_h * kernel_w})).select(1,0).view({channels_in/groups, kernel_h, kernel_w});
-        grad_P2 += at::mm(grad_weight.view({channels_out, channels_in/groups* kernel_h* kernel_w}).t(), grad_Pw.view({channels_out, channels_in/groups * kernel_h * kernel_w})).select(1,0).view({channels_in/groups, kernel_h, kernel_w});
+        grad_P1 += at::mm(grad_Ph.t(),grad_w).sum({1}).view({channels_in/groups, kernel_h, kernel_w,4}).sum({3});
+        grad_P2 += at::mm(grad_Pw.t(),grad_w).sum({1}).view({channels_in/groups, kernel_h, kernel_w,4}).sum({3});
         grad_input.select(0, elt) = grad_input_n.view({channels_in, height, width});
 
     }
