@@ -22,7 +22,7 @@ class SurrogateDilation(torch.autograd.Function):
         
         ctx.save_for_backward(input, weight, P1, P2, bias)
         
-        output = dcls_cpp.forward(input, 
+        output = dcls_cpp.forward(input.contiguous(), 
                                    weight, 
                                    P1, 
                                    P2, 
@@ -40,7 +40,7 @@ class SurrogateDilation(torch.autograd.Function):
                   
         input, weight, P1, P2, bias = ctx.saved_tensors
 
-        outputs = dcls_cpp.backward(input, 
+        outputs = dcls_cpp.backward(input.contiguous(), 
                                    weight, 
                                    P1, 
                                    P2, 
@@ -52,6 +52,9 @@ class SurrogateDilation(torch.autograd.Function):
                                    ctx.groups)
         
         grad_input, grad_weight, grad_P1, grad_P2, grad_bias = outputs
+        #print(grad_weight)
+        #print(grad_P1)
+        #print(grad_P2)
 
         return grad_input, grad_weight, grad_P1, grad_P2, grad_bias, None, None, None, None
 
