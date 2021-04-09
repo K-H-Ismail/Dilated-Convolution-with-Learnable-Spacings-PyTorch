@@ -424,12 +424,13 @@ std::vector<torch::Tensor> dcls_cuda_backward(
     auto P_w = at::clamp(at::floor(P2),-half_range_bot_w,half_range_top_w);
     auto rest_w = -P_w + at::clamp(P2,-half_range_bot_w,half_range_top_w);
     
-    const double sigma = 0.5;
+    const double sigma_h = 0.5/*9.2/(dilation_h * kernel_h)*/;
+    const double sigma_w = 0.5/*9.2/(dilation_w * kernel_w)*/;
     auto ones_r = at::ones_like(rest_h, input.options());    
-    auto W1 = -(ones_r - d_floor(P1, sigma, half_range_bot_h, half_range_top_h)) * (ones_r - rest_w);
-    auto W2 = -(d_floor(P1, sigma, half_range_bot_h, half_range_top_h) - ones_r) * (ones_r - rest_w);
-    auto W3 = -(ones_r - d_floor(P1, sigma, half_range_bot_h, half_range_top_h)) * rest_w;
-    auto W4 = -(d_floor(P1, sigma, half_range_bot_h, half_range_top_h) - ones_r) * rest_w;
+    auto W1 = -(ones_r - d_floor(P1, sigma_h, half_range_bot_h, half_range_top_h)) * (ones_r - rest_w);
+    auto W2 = -(d_floor(P1, sigma_h, half_range_bot_h, half_range_top_h) - ones_r) * (ones_r - rest_w);
+    auto W3 = -(ones_r - d_floor(P1, sigma_h, half_range_bot_h, half_range_top_h)) * rest_w;
+    auto W4 = -(d_floor(P1, sigma_h, half_range_bot_h, half_range_top_h) - ones_r) * rest_w;
     
     auto interpolated_weight_P_h = at::empty({channels_out, channels_in/groups, 2 * kernel_h, 2 * kernel_w}, input.options());
     auto interpolated_weight_P_w = at::empty({channels_out, channels_in/groups, 2 * kernel_h, 2 * kernel_w}, input.options());
@@ -447,10 +448,10 @@ std::vector<torch::Tensor> dcls_cuda_backward(
                                      kernel_h, kernel_w, 
                                      interpolated_weight_P_h.data<scalar_t>());
         
-        W1 = -(ones_r - rest_h) * (ones_r - d_floor(P2, sigma, half_range_bot_w, half_range_top_w));
-        W2 = -rest_h * (ones_r - d_floor(P2, sigma, half_range_bot_w, half_range_top_w));
-        W3 = -(ones_r - rest_h)* (d_floor(P2, sigma, half_range_bot_w, half_range_top_w) - ones_r);
-        W4 = -rest_h * (d_floor(P2, sigma, half_range_bot_w, half_range_top_w) - ones_r);        
+        W1 = -(ones_r - rest_h) * (ones_r - d_floor(P2, sigma_w, half_range_bot_w, half_range_top_w));
+        W2 = -rest_h * (ones_r - d_floor(P2, sigma_w, half_range_bot_w, half_range_top_w));
+        W3 = -(ones_r - rest_h)* (d_floor(P2, sigma_w, half_range_bot_w, half_range_top_w) - ones_r);
+        W4 = -rest_h * (d_floor(P2, sigma_w, half_range_bot_w, half_range_top_w) - ones_r);        
         
         interpolation_kernel<scalar_t><<<GET_BLOCKS(num_kernels_interpolation), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
                                      num_kernels_interpolation,
