@@ -2,7 +2,7 @@ import torch
 import numpy as np
 
 import sys
-egg_path='./dist/dcls_full_cpp-0.0.0-py3.8-linux-x86_64.egg'
+egg_path='/home/ismail/DeepLabV3Plus-Pytorch/ddd/dist/dcls_full_cpp-0.0.0-py3.8-linux-x86_64.egg'
 sys.path.append(egg_path)
 
 import dcls_full_cpp
