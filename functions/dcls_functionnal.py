@@ -3,7 +3,7 @@ import numpy as np
 from torch.autograd.function import once_differentiable
 
 import sys
-egg_path='/home/ismail/Python-3.8.1/lib/python3.8/site-packages/dcls_cpp-0.0.0-py3.8-linux-x86_64.egg'
+egg_path='./dist/dcls_cpp-0.0.0-py3.8-linux-x86_64.egg'
 sys.path.append(egg_path)
 
 import dcls_cpp
