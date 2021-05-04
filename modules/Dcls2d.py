@@ -7,7 +7,7 @@ from torch.nn.parameter import Parameter
 from torch.nn import init
 from torch.nn.modules import Module
 
-from ..functions.dcls_functionnal import SurrogateDilation
+from functions.dcls_functionnal import SurrogateDilation
 
 class Dcls2d(Module):
 

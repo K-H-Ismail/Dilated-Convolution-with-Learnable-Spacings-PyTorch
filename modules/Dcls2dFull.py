@@ -7,7 +7,8 @@ from torch.nn.parameter import Parameter
 from torch.nn import init
 from torch.nn.modules import Module
 
-from ..functions.dcls_functionnal_full import SurrogateDilationFull
+from functions.dcls_functionnal_full import SurrogateDilationFull
+from functions.swc_functionnal import swc2d
 
 class Dcls2dFull(Module):
 
@@ -43,7 +44,8 @@ class Dcls2dFull(Module):
                out_channels: int,
                kernel_size,
                dilation, 
-               bias=None, 
+               bias=None,
+               sparse_mm=False,
                stride=(1,1), 
                padding=(0,0),  
                groups=1, 
@@ -57,6 +59,7 @@ class Dcls2dFull(Module):
     self.kernel_size =  kernel_size
     self.dilation = dilation
     self.bias = Parameter(torch.zeros(out_channels))
+    self.sparse_mm = sparse_mm
     
     if bias is None:
         self.bias.data = torch.zeros(out_channels).data
@@ -80,14 +83,27 @@ class Dcls2dFull(Module):
         kernel = SurrogateDilationFull.apply(self.weight,
                                              self.P1,
                                              self.P2,
-                                             self.dilation)   
-        #print(kernel)        
+                                             self.dilation)
+
+        #print("Density:", kernel.nonzero().size(0)*100/kernel.numel(),"%")
+
+
+        '''return swc2d.apply(input,  
+                                   kernel,          
+                                   self.bias, 
+                                   (1,1),                                   
+                                   self.stride, 
+                                   self.padding, 
+                                   self.groups,
+                                   self.sparse_mm)'''
+
         return torch.nn.functional.conv2d(input,  
-                                          kernel,          
-                                          self.bias,                                           
-                                          self.stride, 
-                                          self.padding, 
-                                          (1,1),
-                                          self.groups)
+                              kernel,          
+                              self.bias,                                           
+                              self.stride, 
+                              self.padding, 
+                              (1,1),
+                              self.groups)
+
         
 

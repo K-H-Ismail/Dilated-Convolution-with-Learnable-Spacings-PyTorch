@@ -3,7 +3,7 @@ import numpy as np
 from torch.autograd.function import once_differentiable
 
 import sys
-egg_path='/home/ismail/DeepLabV3Plus-Pytorch/ddd/dist/dcls_cpp-0.0.0-py3.8-linux-x86_64.egg'
+egg_path='/home/ismail/Dilated-Convolution-with-Learnable-Spacings-PyTorch/dist/dcls_cpp-0.0.0-py3.8-linux-x86_64.egg'
 sys.path.append(egg_path)
 
 import dcls_cpp
