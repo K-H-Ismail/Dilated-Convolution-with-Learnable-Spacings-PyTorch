@@ -281,9 +281,10 @@ std::vector<torch::Tensor> dcls_full_cuda_backward(
                                      grad_P2.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>()); 
         
     });
-    
+    auto norm_w = torch::norm(weight);
+    auto norm_grad_w = torch::norm(grad_weight);
 
     return {grad_weight,
-            1000.0*grad_P1/torch::norm(grad_P1),
-            1000.0*grad_P2/torch::norm(grad_P2)};
+            torch::norm(P1)*grad_P1/torch::norm(grad_P1),
+            torch::norm(P2)*grad_P2/torch::norm(grad_P2)};
 }
