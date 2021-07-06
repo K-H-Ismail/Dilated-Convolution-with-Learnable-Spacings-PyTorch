@@ -1,7 +1,0 @@
-README.md
-dcls_cpp.egg-info/PKG-INFO
-dcls_cpp.egg-info/SOURCES.txt
-dcls_cpp.egg-info/dependency_links.txt
-dcls_cpp.egg-info/top_level.txt
-src/dcls.cpp
-src/cuda/dcls_cuda_kernel.cu
