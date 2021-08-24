@@ -5,7 +5,31 @@ import torch.nn.functional as F
 import sys
 import os
 
-import dcls_1d, dcls_2d, dcls_3d, dcls_2_1d, dcls_3_1d, dcls_3_2d
+import dcls_1d, dcls_2d, dcls_3d, dcls_2_1d, dcls_3_1d, dcls_3_2d, im2col_dcls, dcls
+
+class F_im2col_dcls(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, im, P1, P2, dilation, padding, stride, out_dim, shifts):
+        ctx.dilation = dilation 
+        ctx.padding = padding 
+        ctx.stride = stride
+        ctx.out_dim = out_dim
+        ctx.shifts = shifts         
+        
+        output = im2col_dcls.forward(im,
+                                         P1, P2,
+                                         ctx.dilation[0], ctx.dilation[1],
+                                         ctx.padding[0], ctx.padding[1],
+                                         ctx.stride[0], ctx.stride[1],
+                                         ctx.out_dim[0], ctx.out_dim[1],                                     
+                                         ctx.shifts[0], ctx.shifts[1]
+                                         )
+        return output
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return None, None, None, None, None, None, None, None
+    
 
 class SurrogateDilation(torch.autograd.Function):
     pass
@@ -239,3 +263,54 @@ class RSurrogateDilation1d(RSurrogateDilation):
         print(weight.size())
         print(grad_output.size())
         return grad_input, grad_weight, grad_bias, None, None, None, None, grad_weight.sum().unsqueeze(0)#WIP
+    
+    
+class dcls_conv(torch.autograd.Function):
+
+    @staticmethod 
+    def forward(ctx, input, weight, P1, P2, bias, stride, padding, dilation, groups, chunk_size):
+        
+        ctx.stride = stride 
+        ctx.padding = padding 
+        ctx.dilation = dilation
+        ctx.groups = groups
+        ctx.chunk_size = chunk_size        
+        
+        ctx.save_for_backward(input, weight, P1, P2, bias)
+        
+        output = dcls.forward( input,
+                                 weight, 
+                                 P1, 
+                                 P2, 
+                                 bias,
+                                 ctx.dilation[0], ctx.dilation[1],
+                                 ctx.stride[0], ctx.stride[1],
+                                 ctx.padding[0], ctx.padding[1],
+                                 ctx.groups,
+                                 ctx.chunk_size
+                                )
+
+        return output
+
+
+    @staticmethod   
+    def backward(ctx, grad_output):
+                  
+        input, weight, P1, P2, bias = ctx.saved_tensors
+        outputs = dcls.backward( input,
+                                 weight, 
+                                 P1, 
+                                 P2, 
+                                 grad_output.contiguous(),
+                                 bias,
+                                 ctx.dilation[0], ctx.dilation[1],
+                                 ctx.stride[0], ctx.stride[1],
+                                 ctx.padding[0], ctx.padding[1],
+                                 ctx.groups,
+                                 ctx.chunk_size
+                                )
+        
+        grad_input, grad_weight, grad_P1, grad_P2, grad_bias = outputs
+
+
+        return grad_input, grad_weight, grad_P1, grad_P2, grad_bias, None, None, None, None, None   

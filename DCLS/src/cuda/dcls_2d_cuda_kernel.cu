@@ -108,34 +108,35 @@ torch::Tensor  dcls_2d_cuda_forward(
     const int kernel_w = weight.size(3);
     
     // Suitable for Kaiming uniform initialization
-    auto scaling_h = sqrt(kernel_h * kernel_w * channels_in * dilation_h * dilation_h / 4);
-    auto scaling_w = sqrt(kernel_h * kernel_w * channels_in * dilation_w * dilation_w / 4);    
+    auto scaling_h = sqrt(kernel_h * kernel_w * channels_in * dilation_h * dilation_h)/2;
+    auto scaling_w = sqrt(kernel_h * kernel_w * channels_in * dilation_w * dilation_w)/2;    
  
-    const int half_range_bot_h = dilation_h*kernel_h/2;
+    const int half_range_bot_h = (dilation_h*kernel_h)/2;
 
-    const int half_range_bot_w = dilation_w*kernel_w/2;
+    const int half_range_bot_w = (dilation_w*kernel_w)/2;
     
-    auto scaled_P1 = P1*scaling_h + at::arange(-half_range_bot_h + dilation_h/2,half_range_bot_h + 1e-7,dilation_h, weight.options())
+    auto scaled_P1 = P1*scaling_h + at::arange(-half_range_bot_h /*+ dilation_h/4*/,half_range_bot_h /*+ 1e-7*/,dilation_h, weight.options())
                             .repeat({kernel_w,1})
                             .t()
                             .repeat({channels_out,channels_in,1,1});
-    auto scaled_P2 = P2*scaling_w + at::arange(-half_range_bot_w + dilation_w/2,half_range_bot_w + 1e-7,dilation_w, weight.options())
+    auto scaled_P2 = P2*scaling_w + at::arange(-half_range_bot_w /*+ dilation_w/4*/,half_range_bot_w /*+ 1e-7*/,dilation_w, weight.options())
                             .repeat({kernel_h,1})
                             .repeat({channels_out,channels_in,1,1});
         
+    const int height_out = dilation_h * (kernel_h-1) + 1;
+    const int width_out = dilation_w * (kernel_w-1) + 1;
+    
     auto P_h = scaled_P1.floor();
-    auto rest_h = scaled_P1 - P_h;
+    auto P_w = scaled_P2.floor();    
     
-    auto P_w = scaled_P2.floor();
-    auto rest_w = scaled_P2 - P_w;
+    P_h += (dilation_h*kernel_h)/2 ;
+    P_w += (dilation_w*kernel_w)/2 ;
     
-    const int height_out = dilation_h * kernel_h + (dilation_h+1)%2;
-    const int width_out = dilation_w * kernel_w + (dilation_w+1)%2;
-    
-    P_h += dilation_h*kernel_h/2 ;
-    P_w += dilation_w*kernel_w/2 ;
     P_h = P_h.clamp(0,height_out-1); 
-    P_w = P_w.clamp(0,width_out-1);     
+    P_w = P_w.clamp(0,width_out-1);    
+    
+    auto rest_h = (scaled_P1 + (dilation_h*kernel_h)/2).clamp(0,height_out-1) - P_h; 
+    auto rest_w = (scaled_P2 + (dilation_w*kernel_w)/2).clamp(0,width_out-1) - P_w;    
     
     auto rhW = rest_h * weight;
     auto rwW = rest_w * weight;
@@ -183,41 +184,48 @@ std::vector<torch::Tensor> dcls_2d_cuda_backward(
     const int kernel_h = weight.size(2);
     const int kernel_w = weight.size(3);
     
-    const int half_range_bot_h = dilation_h*kernel_h/2;
+    const int half_range_bot_h = (dilation_h*kernel_h)/2;
     const int half_range_top_h = half_range_bot_h - (dilation_h*kernel_h+1)%2;    
 
-    const int half_range_bot_w = dilation_w*kernel_w/2;
+    const int half_range_bot_w = (dilation_w*kernel_w)/2;
     const int half_range_top_w = half_range_bot_w - (dilation_w*kernel_w+1)%2;
     
     // Suitable for Kaiming uniform initialization
-    auto scaling_h = sqrt(kernel_h * kernel_w * channels_in * dilation_h * dilation_h / 4);
-    auto scaling_w = sqrt(kernel_h * kernel_w * channels_in * dilation_w * dilation_w / 4);  
+    auto scaling_h = sqrt(kernel_h * kernel_w * channels_in * dilation_h * dilation_h)/2;
+    auto scaling_w = sqrt(kernel_h * kernel_w * channels_in * dilation_w * dilation_w)/2;  
     
-    auto scaled_P1 = P1*scaling_h + at::arange(-half_range_bot_h + dilation_h/2,half_range_bot_h + 1e-7,dilation_h, weight.options())
+    auto scaled_P1 = P1*scaling_h + at::arange(-half_range_bot_h /*+ dilation_h/4*/,half_range_bot_h /*+ 1e-7*/,dilation_h, weight.options())
                             .repeat({kernel_w,1})
                             .t()
                             .repeat({channels_out,channels_in,1,1});
-    auto scaled_P2 = P2*scaling_w + at::arange(-half_range_bot_w + dilation_w/2,half_range_bot_w + 1e-7,dilation_w, weight.options())
+    auto scaled_P2 = P2*scaling_w + at::arange(-half_range_bot_w /*+ dilation_w/4*/,half_range_bot_w /*+ 1e-7*/,dilation_w, weight.options())
                             .repeat({kernel_h,1})
                             .repeat({channels_out,channels_in,1,1});
         
+    
+    const int height_out = dilation_h * (kernel_h-1) + 1;
+    const int width_out = dilation_w * (kernel_w-1) + 1;
+    
     auto P_h = scaled_P1.floor();
-    auto rest_h = scaled_P1 - P_h;
+    auto P_w = scaled_P2.floor();    
     
-    auto P_w = scaled_P2.floor();
-    auto rest_w = scaled_P2 - P_w;
+    P_h += (dilation_h*kernel_h)/2 ;
+    P_w += (dilation_w*kernel_w)/2 ;
     
-    const int height_out = dilation_h * kernel_h + (dilation_h+1)%2;
-    const int width_out = dilation_w * kernel_w + (dilation_w+1)%2;
-    
-    P_h += dilation_h*kernel_h/2 ;
-    P_w += dilation_w*kernel_w/2 ;
     P_h = P_h.clamp(0,height_out-1); 
     P_w = P_w.clamp(0,width_out-1);    
     
+    auto rest_h = scaled_P1 + (dilation_h*kernel_h)/2;
+    auto mask_h = rest_h.ge(0) * rest_h.le(height_out-1);
+    rest_h = rest_h.clamp(0,height_out-1) - P_h; 
+    auto rest_w = scaled_P2 + (dilation_w*kernel_w)/2;
+    auto mask_w = rest_w.ge(0) * rest_w.le(width_out-1);
+    rest_w = rest_w.clamp(0,width_out-1) - P_w;    
     
-    auto rhW = rest_h * weight;
-    auto rwW = rest_w * weight;
+
+
+    auto rhW = rest_h * weight * mask_w;
+    auto rwW = rest_w * weight * mask_h;
     auto rhw = rest_h * rest_w;
     auto rhwW = rhw * weight;    
     
@@ -228,18 +236,13 @@ std::vector<torch::Tensor> dcls_2d_cuda_backward(
     auto W3 = rest_w - rhw;
     auto W4 = rhw; 
     
-
-    auto sigma = 0.5*ones;    
-    auto df_P1 = d_floor(scaled_P1, sigma, half_range_bot_h, half_range_top_h, d_zero()) - ones;
-    auto df_P2 = d_floor(scaled_P2, sigma, half_range_bot_w, half_range_top_w, d_zero()) - ones;
-    
-    auto W1_Ph = df_P1 * (weight - rwW);
+    auto W1_Ph = -weight * mask_h + rwW;
     auto W2_Ph = -W1_Ph;
-    auto W3_Ph = df_P1 * rwW;
+    auto W3_Ph = -rwW;
     auto W4_Ph = -W3_Ph;
     
-    auto W1_Pw = df_P2 * (weight - rhW) ;
-    auto W2_Pw = df_P2 * rhW;
+    auto W1_Pw = -weight * mask_w + rhW ;
+    auto W2_Pw = -rhW;
     auto W3_Pw = -W1_Pw;
     auto W4_Pw = -W2_Pw;
     

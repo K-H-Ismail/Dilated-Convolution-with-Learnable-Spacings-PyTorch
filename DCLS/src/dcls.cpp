@@ -15,7 +15,8 @@ torch::Tensor dcls_cuda_forward(
     const int dilation_h, const int dilation_w, 
     const int stride_h, const int stride_w, 
     const int padding_h, const int padding_w, 
-    const int groups); 
+    const int groups,
+    const int chunk_size); 
 
 std::vector<torch::Tensor> dcls_cuda_backward(
     torch::Tensor input,    
@@ -27,7 +28,8 @@ std::vector<torch::Tensor> dcls_cuda_backward(
     const int dilation_h, const int dilation_w, 
     const int stride_h, const int stride_w, 
     const int padding_h, const int padding_w, 
-    const int groups); 
+    const int groups,
+    const int chunk_size); 
     
 // C++ interface
 
@@ -44,9 +46,10 @@ torch::Tensor dcls_forward(
     const int dilation_h, const int dilation_w, 
     const int stride_h, const int stride_w, 
     const int padding_h, const int padding_w, 
-    const int groups) {
+    const int groups,
+    const int chunk_size) {
 
-    CHECK_INPUT(input);    
+    //CHECK_INPUT(input);    
     CHECK_INPUT(weight);
     CHECK_INPUT(P1);
     CHECK_INPUT(P2);
@@ -61,7 +64,8 @@ torch::Tensor dcls_forward(
                               dilation_h, dilation_w,
                               stride_h, stride_w,
                               padding_h, padding_w,
-                              groups); 
+                              groups, 
+                              chunk_size); 
 }
 
 std::vector<torch::Tensor> dcls_backward(
@@ -74,9 +78,10 @@ std::vector<torch::Tensor> dcls_backward(
     const int dilation_h, const int dilation_w, 
     const int stride_h, const int stride_w, 
     const int padding_h, const int padding_w, 
-    const int groups) {
+    const int groups,
+    const int chunk_size) {
     
-    CHECK_INPUT(input);    
+    //CHECK_INPUT(input);    
     CHECK_INPUT(weight);
     CHECK_INPUT(P1);
     CHECK_INPUT(P2);
@@ -92,7 +97,8 @@ std::vector<torch::Tensor> dcls_backward(
                               dilation_h, dilation_w,
                               stride_h, stride_w,
                               padding_h, padding_w,
-                              groups); 
+                              groups,
+                              chunk_size); 
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
