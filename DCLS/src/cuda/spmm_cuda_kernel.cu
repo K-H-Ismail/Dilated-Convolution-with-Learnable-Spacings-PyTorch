@@ -6,7 +6,6 @@
 #include <curand_kernel.h>
 #include <cusparse.h>
 #include <cusparse_v2.h>
-#include <cublas.h>
 #include <cublas_v2.h>
 #include <assert.h>
 using namespace std;
@@ -49,6 +48,7 @@ struct cublasHandle_
     bool init = false;
 };
 static cublasHandle_ handle2_[num_device];
+
 
 void sparse_mm_dense_cusparse_backend(const int & cuda_device_id, const int & m, const int & n, const int & p, float * dA, float * dB, float * dC)
 {
