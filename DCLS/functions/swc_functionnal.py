@@ -1,36 +1,32 @@
 import torch
 import numpy as np
-
+from torch.autograd.function import once_differentiable
+import torch.nn.functional as F
 import sys
 import os
-this_dir = os.path.dirname(os.path.abspath(__file__))
-egg_path= this_dir + '/../../dist/DCLS-0.0.1-py3.8-linux-x86_64.egg'
-sys.path.append(egg_path)
 
-import sparse_weight_conv_cpp
+import sparse_weight_conv
 
 
 class swc2d(torch.autograd.Function):
     
     @staticmethod 
-    def forward(ctx, input, weight, bias, dilation, stride, padding, groups, sparse_mm):
+    def forward(ctx, input, weight, bias, stride, padding, dilation, groups):
         
         ctx.dilation = dilation        
         ctx.stride = stride
         ctx.padding = padding
         ctx.groups = groups
-        ctx.sparse_mm = sparse_mm
         
         ctx.save_for_backward(input, weight, bias)
         
-        output = sparse_weight_conv_cpp.forward(input.contiguous(), 
+        output = sparse_weight_conv.forward(input.contiguous(), 
                                                 weight, 
                                                 bias,
                                                 ctx.dilation[0], ctx.dilation[1], 
                                                 ctx.stride[0], ctx.stride[1], 
                                                 ctx.padding[0], ctx.padding[1], 
-                                                ctx.groups,
-                                                ctx.sparse_mm)
+                                                ctx.groups)
 
         return output
 
@@ -40,16 +36,15 @@ class swc2d(torch.autograd.Function):
                   
         input, weight, bias = ctx.saved_tensors
 
-        outputs = sparse_weight_conv_cpp.backward(input.contiguous(), 
+        outputs = sparse_weight_conv.backward(input.contiguous(), 
                                                   weight, 
                                                   grad_output.contiguous(),                                    
                                                   bias,
                                                   ctx.dilation[0], ctx.dilation[1], 
                                                   ctx.stride[0], ctx.stride[1], 
                                                   ctx.padding[0], ctx.padding[1], 
-                                                  ctx.groups,
-                                                  ctx.sparse_mm)
+                                                  ctx.groups)
         
         grad_input, grad_weight, grad_bias = outputs
 
-        return grad_input, grad_weight, grad_bias, None, None, None, None, None
+        return grad_input, grad_weight, grad_bias, None, None, None, None

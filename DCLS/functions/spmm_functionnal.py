@@ -2,12 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import sys
-import os
-this_dir = os.path.dirname(os.path.abspath(__file__))
-egg_path= this_dir + '/../../dist/DCLS-0.0.1-py3.8-linux-x86_64.egg'
-sys.path.append(egg_path)
-
 import spmm
 
 class sparse_mm_dense_atf(torch.autograd.Function):
