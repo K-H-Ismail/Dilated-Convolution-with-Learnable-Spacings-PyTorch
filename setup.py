@@ -27,7 +27,8 @@ def get_extensions():
                 'dcls_3_1d',
                 'dcls_3_2d',                
                 'dcls_3d',                
-                'dcls']    
+                'dcls',
+                'im2col_dcls']    
     if not sys.platform == 'win32':
         # win32 does not support cuSparse
         ext_list.extend(['spmm', 
