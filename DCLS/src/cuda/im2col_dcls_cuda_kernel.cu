@@ -21,6 +21,51 @@ inline int GET_BLOCKS(const int N) {
 }
 
 template <typename scalar_t>
+__global__ void im2col_dcls_kernel_chout(
+    const int n,
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> input,
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> P_h, 
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> P_w,
+    const int height_in, const int width_in,
+    const int ch_in,
+    const int kernel_h, const int kernel_w,
+    const int height_out, const int width_out,
+    const int pad_h, const int pad_w,
+    const int stride_h, const int stride_w,
+    const int dilation_h, const int dilation_w,   
+    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> data_col) {
+  CUDA_KERNEL_LOOP(index, n) {
+    int w_out = index % width_out;
+    int h_out = (index / width_out) % height_out;
+    int channel_in = (index / height_out / width_out) % ch_in;
+      
+    int h_in = h_out * stride_h - pad_h;
+    int w_in = w_out * stride_w - pad_w;
+
+    for (int i = 0; i < kernel_h; ++i) {
+      for (int j = 0; j < kernel_w; ++j) {
+        int l_dilation_h = static_cast<int>(P_h[channel_in][i][j]) ;//i * dilation_h;
+        int l_dilation_w = static_cast<int>(P_w[channel_in][i][j]) ;//j * dilation_w;
+        
+        for (int shift_h = 0; shift_h < 2; ++shift_h) {
+            for (int shift_w = 0; shift_w < 2; ++shift_w) {
+                int h = h_in + l_dilation_h + shift_h;
+                int w = w_in + l_dilation_w + shift_w;
+
+                if (h >= 0 && w >= 0 && h < height_in && w < width_in) {
+                    data_col[shift_h + 2 * shift_w][(channel_in*kernel_h + i)*kernel_w + j][h_out*width_out + w_out] = 
+                        input[channel_in][h][w];
+                }
+            }
+        }       
+
+      }
+    }
+  }
+}
+
+
+template <typename scalar_t>
 __global__ void im2col_dcls_kernel(
     const int n,
     torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> input,
@@ -67,6 +112,46 @@ torch::Tensor  einsum(
     torch::Tensor columns) {
     
     return at::einsum("ij, ijk -> ik",{weight, columns});
+}
+torch::Tensor  im2col_dcls_cuda_chout(
+    torch::Tensor im,
+    torch::Tensor P_h, torch::Tensor P_w,     
+    const int dilation_h, const int dilation_w, 
+    const int padding_h, const int padding_w,
+    const int stride_h, const int stride_w,
+    const int height_out, const int width_out) {
+    
+    const int height = im.size(1);
+    const int width = im.size(2);
+    
+    const int channels_in = P_h.size(0);
+    const int kernel_h = P_h.size(1);
+    const int kernel_w = P_h.size(2);    
+    
+
+    auto columns = at::zeros({4,channels_in * kernel_h * kernel_w, height_out * width_out}, im.options());
+    
+    const int num_kernels = channels_in * height_out * width_out;
+    
+    AT_DISPATCH_FLOATING_TYPES(im.type(), "im2col_dcls_cuda_chout", [&] {
+
+        im2col_dcls_kernel_chout<scalar_t><<<GET_BLOCKS(num_kernels), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
+                                         num_kernels,
+                                         im.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                         P_h.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                         P_w.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                         height, width,
+                                         channels_in,
+                                         kernel_h, kernel_w, 
+                                         height_out, width_out,
+                                         padding_h, padding_w, 
+                                         stride_h, stride_w, 
+                                         dilation_h, dilation_w,
+                                         columns.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>());
+    });
+    
+    return columns;
+
 }
 
 torch::Tensor  im2col_dcls_cuda(
@@ -136,6 +221,32 @@ torch::Tensor  einsum_dcls_forward(
             output += einsum(weights.select(0,shift_h + 2 * shift_w).view({channels_out, channels_in*kernel_h*kernel_w}), columns);
         }
     }
+
+    return output; 
+}
+
+torch::Tensor  einsum_dcls_forward_chout(
+    torch::Tensor im,
+    torch::Tensor weights,    
+    torch::Tensor P_h, torch::Tensor P_w,     
+    const int dilation_h, const int dilation_w, 
+    const int padding_h, const int padding_w,
+    const int stride_h, const int stride_w,
+    const int height_out, const int width_out) {
+    
+    const int channels_out = weights.select(1,0).size(0);
+    const int channels_in = weights.select(1,0).size(1);
+    const int kernel_h = weights.select(1,0).size(2);
+    const int kernel_w = weights.select(1,0).size(3); 
+    
+    auto output = at::zeros({channels_out, height_out * width_out}, im.options());
+   
+
+    auto columns = im2col_dcls_cuda_chout(im, P_h, P_w, dilation_h, dilation_w, padding_h, padding_w, 
+                                       stride_h, stride_w, height_out, width_out);
+    output = at::mm(weights.view({channels_out, 4 * channels_in * kernel_h * kernel_w}), 
+                    columns.view({ 4 * channels_in * kernel_h * kernel_w, height_out * width_out}));
+
 
     return output; 
 }
@@ -211,6 +322,40 @@ torch::Tensor  einsum_dcls_backward(
     output = einsum(grad, columns.permute({0,2,1}));
     
     return output; 
+}
+
+std::vector<torch::Tensor> einsum_dcls_backward_chout(
+    torch::Tensor im,
+    torch::Tensor weights,
+    torch::Tensor weights_Ph,
+    torch::Tensor weights_Pw,    
+    torch::Tensor grad,    
+    torch::Tensor P_h, torch::Tensor P_w,     
+    const int dilation_h, const int dilation_w, 
+    const int padding_h, const int padding_w,
+    const int stride_h, const int stride_w,
+    const int height_out, const int width_out) {
+    
+    const int channels_out = weights[0].size(0);
+    const int channels_in = weights[0].size(1);
+    const int kernel_h = weights[0].size(2);
+    const int kernel_w = weights[0].size(3); 
+    
+    auto grad_weights = at::zeros({4,channels_out, channels_in * kernel_h * kernel_w}, im.options());  
+   
+
+    auto columns = im2col_dcls_cuda_chout(im, P_h, P_w, dilation_h, dilation_w, padding_h, padding_w, 
+                                          stride_h, stride_w, height_out, width_out).view({4,channels_in * kernel_h * kernel_w, 
+                                                                                           height_out * width_out});
+
+    for (int i = 0; i < 4; ++i) {
+        grad_weights.select(0,i) = at::mm(grad, columns.select(0,i).t());       
+    }
+    
+    return {(grad_weights * weights.view({4, channels_out, channels_in * kernel_h * kernel_w})).sum(0),
+            (grad_weights * weights_Ph.view({4, channels_out, channels_in * kernel_h * kernel_w})).sum(0).mean(0),
+            (grad_weights * weights_Pw.view({4, channels_out, channels_in * kernel_h * kernel_w})).sum(0).mean(0)};
+    
 }
 
 torch::Tensor  chunked_einsum_dcls_backward(

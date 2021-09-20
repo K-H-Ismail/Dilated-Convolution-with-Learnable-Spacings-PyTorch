@@ -77,9 +77,10 @@ torch::Tensor  dcls_cuda_forward(
     const int dilation_h, const int dilation_w, 
     const int stride_h, const int stride_w, 
     const int padding_h, const int padding_w, 
-    const int groups,
-    const int chunk_size) {
+    const int groups) {
     
+    P1 = P1.unsqueeze(0);
+    P2 = P2.unsqueeze(0);       
     // Force batch
     auto is_batch = true;
     if (input.dim() == 3) {
@@ -100,8 +101,8 @@ torch::Tensor  dcls_cuda_forward(
     const int width_out = (width + 2 * padding_w - (dilation_w * (kernel_w - 1) + 1)) / stride_w + 1;
     
     // Suitable for Kaiming uniform initialization
-    auto scaling_h = sqrt(kernel_h * kernel_w * channels_in * dilation_h * dilation_h)/2;
-    auto scaling_w = sqrt(kernel_h * kernel_w * channels_in * dilation_w * dilation_w)/2;    
+    auto scaling_h = sqrt(kernel_h * kernel_w * channels_out * dilation_h * dilation_h)/2;
+    auto scaling_w = sqrt(kernel_h * kernel_w * channels_out * dilation_w * dilation_w)/2;    
  
     const int half_range_bot_h = (dilation_h*kernel_h)/2;
 
@@ -110,13 +111,13 @@ torch::Tensor  dcls_cuda_forward(
     auto scaled_P1 = P1*scaling_h + at::arange(-half_range_bot_h /*+ dilation_h/4*/,half_range_bot_h /*+ 1e-7*/,dilation_h, weight.options())
                             .repeat({kernel_w,1})
                             .t()
-                            .repeat({channels_out,channels_in,1,1});
+                            .repeat({1,channels_in,1,1});
     auto scaled_P2 = P2*scaling_w + at::arange(-half_range_bot_w /*+ dilation_w/4*/,half_range_bot_w /*+ 1e-7*/,dilation_w, weight.options())
                             .repeat({kernel_h,1})
-                            .repeat({channels_out,channels_in,1,1});
+                            .repeat({1,channels_in,1,1});
     
-    const int limit_h = dilation_h * (kernel_h-1) + 1;
-    const int limit_w = dilation_w * (kernel_w-1) + 1;
+    const int limit_h = dilation_h * kernel_h;
+    const int limit_w = dilation_w * kernel_w;
     
     auto P_h = scaled_P1.floor();
     auto P_w = scaled_P2.floor();    
@@ -140,8 +141,7 @@ torch::Tensor  dcls_cuda_forward(
     auto W2 = (rhW - rhwW).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
     auto W3 = (rwW - rhwW).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
     auto W4 = rhwW.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w}); 
-    auto P_h_g = P_h.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w}); 
-    auto P_w_g = P_w.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});     
+  
     
     auto output = torch::empty({batch, channels_out , height_out , width_out}, input.options());
     for (int elt = 0; elt < batch; elt++) {
@@ -152,13 +152,14 @@ torch::Tensor  dcls_cuda_forward(
         auto input_g = input_n.view({groups, channels_in, height, width});
         auto output_g = output_n.view({groups, channels_out/groups, height_out * width_out});
         
+        auto P_h_g_m = P_h.select(0, 0); 
+        auto P_w_g_m = P_w.select(0, 0);        
         for (int g = 0; g < groups; ++g)
         {
-            auto weights_gm = at::stack({W1.select(0, g), W3.select(0, g), W2.select(0, g), W4.select(0, g)},0);
-            auto P_h_g_m = P_h_g.select(0, g); 
-            auto P_w_g_m = P_w_g.select(0, g); 
+            auto weights_gm = at::stack({W1.select(0, g), W3.select(0, g), W2.select(0, g), W4.select(0, g)},1);
+ 
             
-            auto output_m = bias_g.select(0, g).view({channels_out/groups,1}) + chunked_einsum_dcls_forward(input_g.select(0,g), weights_gm, P_h_g_m, P_w_g_m, dilation_h, dilation_w, padding_h, padding_w, stride_h, stride_w, height_out, width_out, chunk_size);
+            auto output_m =  einsum_dcls_forward_chout(input_g.select(0,g), weights_gm, P_h_g_m, P_w_g_m, dilation_h, dilation_w, padding_h, padding_w, stride_h, stride_w, height_out, width_out);
             output_g.select(0, g) = output_m;
         }
         output.select(0, elt) = output_g.view({channels_out, height_out, width_out});
@@ -179,8 +180,9 @@ std::vector<torch::Tensor> dcls_cuda_backward(
     const int dilation_h, const int dilation_w, 
     const int stride_h, const int stride_w, 
     const int padding_h, const int padding_w, 
-    const int groups,
-    const int chunk_size) {
+    const int groups) {
+    
+
     
     // Force batch
     auto is_batch = true;
@@ -194,7 +196,10 @@ std::vector<torch::Tensor> dcls_cuda_backward(
     auto grad_P1 = torch::zeros_like(P1);
     auto grad_P2 = torch::zeros_like(P2);    
     auto grad_bias = torch::zeros_like(bias);
-        
+       
+    P1 = P1.unsqueeze(0);
+    P2 = P2.unsqueeze(0); 
+    
     const int batch = input.size(0);
     const int channels_in = weight.size(1);
     const int height = input.size(2);
@@ -211,19 +216,20 @@ std::vector<torch::Tensor> dcls_cuda_backward(
     const int half_range_bot_w = (dilation_w*kernel_w)/2;
     
     // Suitable for Kaiming uniform initialization
-    auto scaling_h = sqrt(kernel_h * kernel_w * channels_in * dilation_h * dilation_h)/2;
-    auto scaling_w = sqrt(kernel_h * kernel_w * channels_in * dilation_w * dilation_w)/2;  
+    auto scaling_h = sqrt(kernel_h * kernel_w * channels_out * dilation_h * dilation_h)/2;
+    auto scaling_w = sqrt(kernel_h * kernel_w * channels_out * dilation_w * dilation_w)/2;  
     
     auto scaled_P1 = P1*scaling_h + at::arange(-half_range_bot_h /*+ dilation_h/4*/,half_range_bot_h /*+ 1e-7*/,dilation_h, weight.options())
                             .repeat({kernel_w,1})
                             .t()
-                            .repeat({channels_out,channels_in,1,1});
+                            .repeat({1,channels_in,1,1});
     auto scaled_P2 = P2*scaling_w + at::arange(-half_range_bot_w /*+ dilation_w/4*/,half_range_bot_w /*+ 1e-7*/,dilation_w, weight.options())
                             .repeat({kernel_h,1})
-                            .repeat({channels_out,channels_in,1,1});
+                            .repeat({1,channels_in,1,1});
     
-    const int limit_h = dilation_h * (kernel_h-1) + 1;
-    const int limit_w = dilation_w * (kernel_w-1) + 1;
+    const int limit_h = dilation_h * kernel_h;
+    const int limit_w = dilation_w * kernel_w;
+
     
     auto P_h = scaled_P1.floor();
     auto P_w = scaled_P2.floor();    
@@ -242,22 +248,20 @@ std::vector<torch::Tensor> dcls_cuda_backward(
     rest_w = rest_w.clamp(0,limit_w-1) - P_w;    
     
 
-    auto rhW = rest_h * weight * mask_w;
-    auto rwW = rest_w * weight * mask_h;
-    auto rhw = rest_h * rest_w;    
+    auto rhW = rest_h * mask_w * weight;
+    auto rwW = rest_w * mask_h * weight;
+    auto rhw = rest_h * rest_w;   
    
     // prepare group weight and bias
     auto grad_bias_g = bias.view({groups, channels_out/groups});
     auto weight_g = weight.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});     
-    auto grad_weight_g = grad_weight.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
-    auto grad_P1_g = grad_P1.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
-    auto grad_P2_g = grad_P2.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});    
-    auto ones = at::ones_like(rest_h, weight.options()).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
+    auto grad_weight_g = grad_weight.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});    
+    auto ones = at::ones_like(weight, weight.options()).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
         
-    auto W1 = (ones - rest_h - rest_w + rhw).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
-    auto W2 = (rest_h - rhw).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
-    auto W3 = (rest_w - rhw).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
-    auto W4 = rhw.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w}); 
+    auto W1 = ((ones.select(0,0) - rest_h - rest_w + rhw) * ones).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
+    auto W2 = ((rest_h - rhw) * ones).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
+    auto W3 = ((rest_w - rhw) * ones).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
+    auto W4 = (rhw * ones).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w}); 
     
     auto W1_Ph = (-weight * mask_h + rwW).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
     auto W2_Ph = -W1_Ph.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
@@ -268,20 +272,18 @@ std::vector<torch::Tensor> dcls_cuda_backward(
     auto W2_Pw = -rhW.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
     auto W3_Pw = -W1_Pw.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
     auto W4_Pw = -W2_Pw.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
-    
-    auto P_h_g = P_h.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w}); 
-    auto P_w_g = P_w.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});     
+        
     
     for (int elt = 0; elt < batch; elt++) {
 
         auto input_n = input.select(0, elt);
         auto grad_input_n = grad_input.select(0, elt);
         auto grad_output_n = grad_output.select(0, elt);   
-        auto columns = at::empty({channels_in * kernel_h * kernel_w, height_out * width_out}, input.options());
+        auto columns = at::empty({groups * channels_in * kernel_h * kernel_w, height_out * width_out}, input.options());
 
 
         auto grad_output_g = grad_output_n.view({groups, channels_out/groups, height_out * width_out});
-        auto columns_g = columns.view({groups, channels_in/groups * kernel_h * kernel_w, height_out * width_out});
+        auto columns_g = columns.view({groups, channels_in * kernel_h * kernel_w, height_out * width_out});
 
         auto input_g = input_n.view({groups, channels_in, height, width});
         
@@ -289,11 +291,11 @@ std::vector<torch::Tensor> dcls_cuda_backward(
         {
             auto grad_output_gm = grad_output_g.select(0, g);
             auto columns_gm = columns_g.select(0, g);
-            auto weight_gm = weight_g.select(0, g).view({channels_out/groups, channels_in/groups *kernel_h * kernel_w}).t();
+            auto weight_gm = weight_g.select(0, g).view({channels_out/groups, channels_in *kernel_h * kernel_w}).t();
             columns_g.select(0, g) = at::mm(weight_gm, grad_output_gm);
 
         }
-        columns = columns_g.view({channels_in * kernel_h * kernel_w, height_out * width_out});
+        columns = columns_g.view({groups * channels_in * kernel_h * kernel_w, height_out * width_out});
         
         auto num_kernels = channels_in * kernel_h * kernel_w;
         AT_DISPATCH_FLOATING_TYPES(input.type(), "dcls_backward_cuda", [&] {
@@ -309,48 +311,41 @@ std::vector<torch::Tensor> dcls_cuda_backward(
                                              height_out, width_out,                
                                              grad_input_n.data<scalar_t>());
         });
-
+       
         for (int g = 0; g < groups; ++g)
         {
-            auto grad_output_gm = grad_output_g.select(0, g);
+            auto grad_output_gm = grad_output_g.select(0, g);           
             auto grad_weight_gm = grad_weight_g.select(0, g)
-                .view({channels_out/groups, channels_in * kernel_h * kernel_w});
-            auto grad_P1_gm = grad_P1_g.select(0, g)
-                .view({channels_out/groups, channels_in * kernel_h * kernel_w});
-            auto grad_P2_gm = grad_P2_g.select(0, g)
-                .view({channels_out/groups, channels_in * kernel_h * kernel_w});            
+                .view({channels_out/groups, channels_in * kernel_h * kernel_w});           
             auto grad_bias_gm = grad_bias_g.select(0, g);
             
             auto weights_gm = at::stack({W1.select(0, g), W3.select(0, g), W2.select(0, g), W4.select(0, g)},0);
             auto weights_gm_Ph = at::stack({W1_Ph.select(0, g), W3_Ph.select(0, g), W2_Ph.select(0, g), W4_Ph.select(0, g)},0);
             auto weights_gm_Pw = at::stack({W1_Pw.select(0, g), W3_Pw.select(0, g), W2_Pw.select(0, g), W4_Pw.select(0, g)},0);            
-            auto P_h_g_m = P_h_g.select(0, g); 
-            auto P_w_g_m = P_w_g.select(0, g);
+            auto P_h_g_m = P_h.select(0,0); 
+            auto P_w_g_m = P_w.select(0,0); 
             
-            grad_weight_g.select(0, g) = (grad_weight_gm + 
-                chunked_einsum_dcls_backward(input_g.select(0,g), weights_gm, grad_output_gm, P_h_g_m, P_w_g_m, 
-                                             dilation_h, dilation_w, padding_h, padding_w, stride_h, stride_w, height_out,
-                                             width_out, chunk_size)).view_as(grad_weight_g.select(0, g));
-            grad_P1_g.select(0, g) = (grad_P1_gm + 
-                chunked_einsum_dcls_backward(input_g.select(0,g), weights_gm_Ph, grad_output_gm, P_h_g_m, P_w_g_m, 
-                                             dilation_h, dilation_w, padding_h, padding_w, stride_h, stride_w, height_out,
-                                             width_out, chunk_size)).view_as(grad_weight_g.select(0, g));
-            grad_P2_g.select(0, g) = (grad_P2_gm + 
-                chunked_einsum_dcls_backward(input_g.select(0,g), weights_gm_Pw, grad_output_gm, P_h_g_m, P_w_g_m, 
-                                             dilation_h, dilation_w, padding_h, padding_w, stride_h, stride_w, height_out,
-                                             width_out, chunk_size)).view_as(grad_weight_g.select(0, g));           
-            grad_bias_g.select(0, g) = at::addmv(grad_bias_gm, grad_output_gm, at::ones({height_out * width_out}, input.options()));
+            auto grads =  
+                einsum_dcls_backward_chout(input_g.select(0,g), weights_gm,  weights_gm_Ph,  weights_gm_Pw, grad_output_gm,
+                                           P_h_g_m, P_w_g_m, dilation_h, dilation_w, padding_h, padding_w, stride_h, stride_w,
+                                           height_out, width_out); 
+            grad_weight_g.select(0, g) = (grad_weight_gm + grads[0]).view_as(grad_weight_g.select(0, g));
+            grad_P1 += grads[1].view_as(grad_P1); 
+            grad_P2 += grads[2].view_as(grad_P2);            
+
+            grad_bias_g.select(0, g) = at::addmv(grad_bias_gm, grad_output_gm, at::ones({height_out * width_out},
+                                                                                        input.options()));
         }
-        grad_weight = grad_weight_g.view({channels_out, channels_in/groups, kernel_h, kernel_w});
-        grad_P1 = grad_P1_g.view({channels_out, channels_in/groups, kernel_h, kernel_w});
-        grad_P2 = grad_P2_g.view({channels_out, channels_in/groups, kernel_h, kernel_w});       
+        grad_weight = grad_weight_g.view({channels_out, channels_in, kernel_h, kernel_w});
+        grad_P1 = grad_P1.view({channels_in, kernel_h, kernel_w});
+        grad_P2 = grad_P2.view({channels_in, kernel_h, kernel_w});    
 
     }
     if (!is_batch) grad_input = grad_input.squeeze(0);
 
     return {grad_input,
             grad_weight,
-            grad_P1,
-            grad_P2,
+            grad_P1*scaling_h,
+            grad_P2*scaling_w,
             grad_bias};
 }

@@ -268,13 +268,12 @@ class RSurrogateDilation1d(RSurrogateDilation):
 class dcls_conv(torch.autograd.Function):
 
     @staticmethod 
-    def forward(ctx, input, weight, P1, P2, bias, stride, padding, dilation, groups, chunk_size):
+    def forward(ctx, input, weight, P1, P2, bias, stride, padding, dilation, groups):
         
         ctx.stride = stride 
         ctx.padding = padding 
         ctx.dilation = dilation
-        ctx.groups = groups
-        ctx.chunk_size = chunk_size        
+        ctx.groups = groups       
         
         ctx.save_for_backward(input, weight, P1, P2, bias)
         
@@ -286,8 +285,7 @@ class dcls_conv(torch.autograd.Function):
                                  ctx.dilation[0], ctx.dilation[1],
                                  ctx.stride[0], ctx.stride[1],
                                  ctx.padding[0], ctx.padding[1],
-                                 ctx.groups,
-                                 ctx.chunk_size
+                                 ctx.groups
                                 )
 
         return output
@@ -306,11 +304,10 @@ class dcls_conv(torch.autograd.Function):
                                  ctx.dilation[0], ctx.dilation[1],
                                  ctx.stride[0], ctx.stride[1],
                                  ctx.padding[0], ctx.padding[1],
-                                 ctx.groups,
-                                 ctx.chunk_size
+                                 ctx.groups
                                 )
         
         grad_input, grad_weight, grad_P1, grad_P2, grad_bias = outputs
 
 
-        return grad_input, grad_weight, grad_P1, grad_P2, grad_bias, None, None, None, None, None   
+        return grad_input, grad_weight, grad_P1, grad_P2, grad_bias, None, None, None, None   

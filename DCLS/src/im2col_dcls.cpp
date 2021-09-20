@@ -1,13 +1,12 @@
 #include <iostream>
 #include <torch/extension.h>
 
-torch::Tensor im2col_dcls_cuda(torch::Tensor im,
+torch::Tensor im2col_dcls_cuda_chout(torch::Tensor im,
                                torch::Tensor P_h, torch::Tensor P_w,                      
                                const int dilation_h, const int dilation_w,
                                const int padding_h, const int padding_w,
                                const int stride_h, const int stride_w,
-                               const int height_out, const int width_out,                               
-                               const int shift_h, const int shift_w                               
+                               const int height_out, const int width_out                            
                                );
 // C++ interface
 
@@ -28,13 +27,12 @@ torch::Tensor im2col_dcls_forward(torch::Tensor im,
     CHECK_INPUT(P_h);
     CHECK_INPUT(P_w);    
 
-    return im2col_dcls_cuda(im,
+    return im2col_dcls_cuda_chout(im,
                             P_h, P_w,    
                             dilation_h, dilation_w,
                             padding_h, padding_w,                              
                             stride_h, stride_w,
-                            height_out, width_out,                            
-                            shift_h, shift_w
+                            height_out, width_out
                             ); 
 }
 
