@@ -8,7 +8,7 @@ from torch import Tensor
 from torch.nn.parameter import Parameter
 import torch.nn.functional as F
 import DCLS
-import DCLS.functions.swc_functionnal as SW
+import DCLS.construct.functions.swc_functionnal as SW
 from torch.nn import init
 from torch.nn.modules import Module
 from torch.nn.modules.utils import _single, _pair, _triple, _reverse_repeat_tuple

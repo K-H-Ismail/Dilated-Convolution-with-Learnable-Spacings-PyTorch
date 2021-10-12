@@ -6,14 +6,14 @@
 
 // CUDA forward declarations
 
-torch::Tensor dcls_3_2d_cuda_forward(   
+torch::Tensor dcls_construct_3_2d_cuda_forward(   
     torch::Tensor weight,
     torch::Tensor P1,
     torch::Tensor P2,
     const int dilation_h, const int dilation_w
     ); 
 
-std::vector<torch::Tensor> dcls_3_2d_cuda_backward(   
+std::vector<torch::Tensor> dcls_construct_3_2d_cuda_backward(   
     torch::Tensor weight,
     torch::Tensor P1,
     torch::Tensor P2,
@@ -27,7 +27,7 @@ std::vector<torch::Tensor> dcls_3_2d_cuda_backward(
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
-torch::Tensor dcls_3_2d_forward(   
+torch::Tensor dcls_construct_3_2d_forward(   
     torch::Tensor weight,
     torch::Tensor P1,
     torch::Tensor P2,
@@ -39,7 +39,7 @@ torch::Tensor dcls_3_2d_forward(
     CHECK_INPUT(P2);
 
 
-    return dcls_3_2d_cuda_forward(
+    return dcls_construct_3_2d_cuda_forward(
                               weight, 
                               P1, 
                               P2,
@@ -47,7 +47,7 @@ torch::Tensor dcls_3_2d_forward(
                               ); 
 }
 
-std::vector<torch::Tensor> dcls_3_2d_backward(   
+std::vector<torch::Tensor> dcls_construct_3_2d_backward(   
     torch::Tensor weight,
     torch::Tensor P1,
     torch::Tensor P2,
@@ -60,7 +60,7 @@ std::vector<torch::Tensor> dcls_3_2d_backward(
     CHECK_INPUT(P2);
     CHECK_INPUT(grad_output);    
 
-    return dcls_3_2d_cuda_backward( 
+    return dcls_construct_3_2d_cuda_backward( 
                               weight, 
                               P1, 
                               P2,
@@ -70,6 +70,6 @@ std::vector<torch::Tensor> dcls_3_2d_backward(
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-  m.def("forward", &dcls_3_2d_forward, "DCLS3_2d forward (CUDA)");
-  m.def("backward", &dcls_3_2d_backward, "DCLS3_2d backward (CUDA)");
+  m.def("forward", &dcls_construct_3_2d_forward, "DCLS3_2d forward (CUDA)");
+  m.def("backward", &dcls_construct_3_2d_backward, "DCLS3_2d backward (CUDA)");
 }
