@@ -6,294 +6,357 @@
 #include <ATen/ATen.h>
 #include <ATen/cuda/CUDAContext.h>
 
-#include "dcls.h"
-
 #include <math.h>
 #include <vector>
+#include "im2col_dcls_2d_cuda_kernel.cu"
 
-template <typename scalar_t>
-__global__ void interpolation_kernel(
-    const int n,
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> P_h,
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> P_w,    
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> W1, 
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> W2,
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> W3, 
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> W4,    
-    const int ch_out, const int ch_in,
-    const int kernel_h, const int kernel_w,
-    const int height_out, const int width_out,    
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits>  interpolated_weight) {
-  CUDA_KERNEL_LOOP(index, n) {
-    int w_out = index % kernel_w;
-    int h_out = (index / kernel_w) % kernel_h;
-    int channel_in = (index / kernel_h / kernel_w) % ch_in;
-    int channel_out = (index / kernel_h / kernel_w / ch_in) % ch_out;
-      
-    int p_h = P_h[channel_out][channel_in][h_out][w_out];
-    int p_w = P_w[channel_out][channel_in][h_out][w_out];
-    int p_h_next = p_h + 1;
-    int p_w_next = p_w + 1;      
-       
-    if(p_h >= 0 & p_h < height_out & p_w >= 0 & p_w < width_out)
-    {   
-        interpolated_weight[channel_out][channel_in][p_h][p_w] +=  W1[channel_out][channel_in][h_out][w_out];
-        if(p_h_next < height_out) 
-            interpolated_weight[channel_out][channel_in][p_h_next][p_w] += W2[channel_out][channel_in][h_out][w_out];
-        if(p_w_next < width_out) 
-            interpolated_weight[channel_out][channel_in][p_h][p_w_next] += W3[channel_out][channel_in][h_out][w_out];
-        if(p_h_next < height_out & p_w_next < width_out) 
-            interpolated_weight[channel_out][channel_in][p_h_next][p_w_next] += W4[channel_out][channel_in][h_out][w_out];
-    }
-      
-  }
-}
-
-template <typename scalar_t>
-__global__ void interpolation_grad_kernel(
-    const int n,
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> grad_output,    
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> P_h,
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> P_w,  
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> W1, 
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> W2,
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> W3, 
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> W4,    
-    const int ch_out, const int ch_in,
-    const int kernel_h, const int kernel_w,
-    const int height_out, const int width_out,     
-    torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits>  interpolated_weight) {
-  CUDA_KERNEL_LOOP(index, n) {
-    int w_out = index % kernel_w;
-    int h_out = (index / kernel_w) % kernel_h;
-    int channel_in = (index / kernel_h / kernel_w) % ch_in;
-    int channel_out = (index / kernel_h / kernel_w / ch_in) % ch_out;
-      
-    int p_h = P_h[channel_out][channel_in][h_out][w_out];
-    int p_w = P_w[channel_out][channel_in][h_out][w_out];
-    int p_h_next = p_h + 1;
-    int p_w_next = p_w + 1;       
-
-    if(p_h >= 0 & p_h < height_out & p_w >= 0 & p_w < width_out)
-    {     
-        interpolated_weight[channel_out][channel_in][h_out][w_out] += 
-            grad_output[channel_out][channel_in][p_h][p_w] * W1[channel_out][channel_in][h_out][w_out];
-
-        if(p_h_next < height_out)
-            interpolated_weight[channel_out][channel_in][h_out][w_out] +=        
-            grad_output[channel_out][channel_in][p_h_next][p_w] * W2[channel_out][channel_in][h_out][w_out];
-
-        if(p_w_next < width_out)
-            interpolated_weight[channel_out][channel_in][h_out][w_out] +=        
-            grad_output[channel_out][channel_in][p_h][p_w_next] * W3[channel_out][channel_in][h_out][w_out];
-
-        if(p_h_next < height_out & p_w_next < width_out)
-            interpolated_weight[channel_out][channel_in][h_out][w_out] += 
-            grad_output[channel_out][channel_in][p_h_next][p_w_next] * W4[channel_out][channel_in][h_out][w_out];
-    }
-      
-  }
-}
-
-torch::Tensor  dcls_2d_cuda_forward(  
+// Forward method for dcls 2d with no kernel construction
+torch::Tensor  dcls_2d_cuda_forward(
+    torch::Tensor input,    
     torch::Tensor weight,
     torch::Tensor P1,
     torch::Tensor P2,
-    const int dilation_h, const int dilation_w
-    ) {
+    torch::Tensor bias,
+    const int dilation_h, const int dilation_w, 
+    const int stride_h, const int stride_w, 
+    const int padding_h, const int padding_w, 
+    const int groups,
+    const float gain) {
     
+    // Unsqueeze P1 and P2 for element-wise matrix multiplication compatibility
+    P1 = P1.unsqueeze(0);
+    P2 = P2.unsqueeze(0);
+    
+    // Force batch if input is of dim 3
+    auto is_batch = true;
+    if (input.dim() == 3) {
+        is_batch = false;
+        input = input.unsqueeze(0);
+    }
+        
+    const int batch = input.size(0);
+    const int channels_in = weight.size(1);
+    const int height = input.size(2);
+    const int width = input.size(3);
+
     const int channels_out = weight.size(0);
-    const int channels_in = weight.size(1);    
     const int kernel_h = weight.size(2);
     const int kernel_w = weight.size(3);
     
-    // Suitable for Kaiming uniform initialization
-    auto scaling_h = sqrt(kernel_h * kernel_w * channels_in * dilation_h * dilation_h)/2;
-    auto scaling_w = sqrt(kernel_h * kernel_w * channels_in * dilation_w * dilation_w)/2;    
- 
-    const int half_range_bot_h = (dilation_h*kernel_h)/2;
-
-    const int half_range_bot_w = (dilation_w*kernel_w)/2;
+    const int height_out = (height + 2 * padding_h - (dilation_h * (kernel_h - 1) + 1)) / stride_h + 1;
+    const int width_out = (width + 2 * padding_w - (dilation_w * (kernel_w - 1) + 1)) / stride_w + 1;
     
-    auto scaled_P1 = P1*scaling_h + at::arange(-half_range_bot_h /*+ dilation_h/4*/,half_range_bot_h /*+ 1e-7*/,dilation_h, weight.options())
-                            .repeat({kernel_w,1})
-                            .t()
-                            .repeat({channels_out,channels_in,1,1});
-    auto scaled_P2 = P2*scaling_w + at::arange(-half_range_bot_w /*+ dilation_w/4*/,half_range_bot_w /*+ 1e-7*/,dilation_w, weight.options())
-                            .repeat({kernel_h,1})
-                            .repeat({channels_out,channels_in,1,1});
-        
-    const int height_out = dilation_h * (kernel_h-1) + 1;
-    const int width_out = dilation_w * (kernel_w-1) + 1;
+    // Suitable scaling for Kaiming uniform initialization
+    auto scaling_h = gain * sqrt(kernel_h * kernel_w * channels_in);
+    auto scaling_w = gain * sqrt(kernel_h * kernel_w * channels_in);     
+     
+    // Bounds for Ph and Pw
+    const int half_range_h = (dilation_h * kernel_h) / 2;
+    const int half_range_w = (dilation_w * kernel_w) / 2;
     
-    auto P_h = scaled_P1.floor();
-    auto P_w = scaled_P2.floor();    
+    // Preform scaling and add regular spacings
+    auto scaled_P1 = P1 * scaling_h + at::arange(-half_range_h, half_range_h, dilation_h, weight.options())
+                                      .repeat({kernel_w,1})
+                                      .t()
+                                      .repeat({1,channels_in,1,1})
+                                    + ((kernel_h - 1) * dilation_h / 4);
+    auto scaled_P2 = P2 * scaling_w + at::arange(-half_range_w, half_range_w, dilation_w, weight.options())
+                                      .repeat({kernel_h,1})
+                                      .repeat({1,channels_in,1,1})
+                                    + ((kernel_w - 1) * dilation_w / 4);
     
-    P_h += (dilation_h*kernel_h)/2 ;
-    P_w += (dilation_w*kernel_w)/2 ;
+    // Limits of the dilated kernel
+    const int limit_h = dilation_h * kernel_h;
+    const int limit_w = dilation_w * kernel_w;
     
-    P_h = P_h.clamp(0,height_out-1); 
-    P_w = P_w.clamp(0,width_out-1);    
+    // Add d.k/2, positions are now uniformly around 0 and d.k - 1    
+    auto P_h = scaled_P1 + half_range_h;
+    auto P_w = scaled_P2 + half_range_w;    
     
-    auto rest_h = (scaled_P1 + (dilation_h*kernel_h)/2).clamp(0,height_out-1) - P_h; 
-    auto rest_w = (scaled_P2 + (dilation_w*kernel_w)/2).clamp(0,width_out-1) - P_w;    
+    // Apply floor function, positions are now integers uniformly around 0 and d.k - 1
+    P_h = P_h.floor();
+    P_w = P_w.floor();
     
+    // Apply clamp function, positions are now integers strictly between 0 and d.k - 1
+    P_h = P_h.clamp(0, limit_h - 1); 
+    P_w = P_w.clamp(0, limit_w - 1);    
+    
+    // Calculate rests for interpolation
+    auto rest_h = (scaled_P1 + half_range_h).clamp(0, limit_h - 1) - P_h; 
+    auto rest_w = (scaled_P2 + half_range_w).clamp(0, limit_w - 1) - P_w;    
+    
+    // Calculate interpolations and make groups for separable conv    
     auto rhW = rest_h * weight;
     auto rwW = rest_w * weight;
     auto rhwW = rest_h * rwW;    
-    auto W1 = weight - rhW - rwW + rhwW;
-    auto W2 = rhW - rhwW;
-    auto W3 = rwW - rhwW;
-    auto W4 = rhwW;    
     
-    auto output = torch::zeros({channels_out, channels_in, height_out, width_out}, weight.options());
+    auto bias_g = bias.view({groups, channels_out/groups});
+    auto W1 = (weight - rhW - rwW + rhwW).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
+    auto W2 = (rhW - rhwW).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
+    auto W3 = (rwW - rhwW).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
+    auto W4 = rhwW.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w}); 
+
+    // We consider the maximum free memory 
+    long free_memory = constants::GLOBAL_FREE_MEMORY;
     
-    const int num_kernels =  channels_out * channels_in * kernel_h * kernel_w ;
-    AT_DISPATCH_FLOATING_TYPES(weight.type(), "dcls_2d_forward_cuda", [&] {
-          
-        interpolation_kernel<scalar_t><<<GET_BLOCKS(num_kernels), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
-                                     num_kernels,
-                                     P_h.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     P_w.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     W1.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     W2.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     W3.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     W4.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     channels_out, channels_in,
-                                     kernel_h, kernel_w,
-                                     height_out, width_out,
-                                     output.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>());
-    });    
+    // Choose chunksize according to total memory (we consider 2d interpolation and float32 tensors thus 4 x 4)
+    const int max_chunk_size = free_memory / (4 * 4 * channels_in * kernel_h * kernel_w * height_out * width_out) + 1;
+    
+    const int nb_chunks = (batch - 1) / max_chunk_size + 1;
+    
+    auto chunked_input = input.chunk(nb_chunks,0);
+    
+    auto output = at::zeros({}, input.options());
+    auto P_h_g_m = P_h.select(0, 0); 
+    auto P_w_g_m = P_w.select(0, 0);    
+    
+    // Loop over batch chunks
+    for (int chunk = 0; chunk < nb_chunks; chunk++) {
+
+        auto input_n = chunked_input[chunk];
+        const int chunk_size = input_n.size(0);
+
+        auto input_g = input_n.view({groups, chunk_size, channels_in, height, width});       
+        auto output_g = at::zeros({groups, chunk_size, channels_out/groups, height_out * width_out}, input.options());
+        
+        // Loop over groups in case of separable convolution
+        for (int g = 0; g < groups; ++g)
+        {
+            auto weights_gm = at::stack({W1.select(0, g), 
+                                         W2.select(0, g), 
+                                         W3.select(0, g), 
+                                         W4.select(0, g)},1);
+            // Call im2col_dcls + matmul
+            auto output_m =  mm_dcls_2d_forward(input_g.select(0,g), weights_gm, P_h_g_m, P_w_g_m, 
+                                             dilation_h, dilation_w, padding_h, padding_w, 
+                                             stride_h, stride_w, height_out, width_out);
+            output_g.select(0, g) = output_m;
+        }
+        
+        auto output_chunk = output_g.view({chunk_size, channels_out, height_out, width_out});
+        
+        // Concatenate outputs along chunks
+        output = chunk == 0 ?  output_chunk : at::cat({output, output_chunk},0);
+    }
+    
+    // Only if input was of dim 3
+    if (!is_batch) output = output.squeeze(0);
+    
     return output;
 }
 
-std::vector<torch::Tensor> dcls_2d_cuda_backward(   
+// Backward method for dcls 2d with no kernel construction
+std::vector<torch::Tensor> dcls_2d_cuda_backward(
+    torch::Tensor input,    
     torch::Tensor weight,
     torch::Tensor P1,
     torch::Tensor P2,
     torch::Tensor grad_output,      
-    const int dilation_h, const int dilation_w
-    ) {
+    torch::Tensor bias,
+    const int dilation_h, const int dilation_w, 
+    const int stride_h, const int stride_w, 
+    const int padding_h, const int padding_w, 
+    const int groups,
+    const float gain) {
+        
+    // Force batch if input is of dim 3
+    auto is_batch = true;
+    if (input.dim() == 3) {
+        is_batch = false;
+        input = input.unsqueeze(0);
+    }
     
+    auto grad_input = torch::zeros_like(input);      
     auto grad_weight = torch::zeros_like(weight);
     auto grad_P1 = torch::zeros_like(P1);
-    auto grad_P2 = torch::zeros_like(P2);     
-        
+    auto grad_P2 = torch::zeros_like(P2);    
+    auto grad_bias = torch::zeros_like(bias);
+       
+    // Unsqueeze P1 and P2 for element-wise matrix multiplication compatibility    
+    P1 = P1.unsqueeze(0);
+    P2 = P2.unsqueeze(0); 
+    
+    const int batch = input.size(0);
+    const int channels_in = weight.size(1);
+    const int height = input.size(2);
+    const int width = input.size(3);
+
     const int channels_out = weight.size(0);
-    const int channels_in = weight.size(1);    
     const int kernel_h = weight.size(2);
     const int kernel_w = weight.size(3);
     
-    const int half_range_bot_h = (dilation_h*kernel_h)/2;
-    const int half_range_top_h = half_range_bot_h - (dilation_h*kernel_h+1)%2;    
+    const int height_out = (height + 2 * padding_h - (dilation_h * (kernel_h - 1) + 1)) / stride_h + 1;
+    const int width_out = (width + 2 * padding_w - (dilation_w * (kernel_w - 1) + 1)) / stride_w + 1;
+    
+    // Suitable scaling for Kaiming uniform initialization
+    auto scaling_h = gain * sqrt(kernel_h * kernel_w * channels_in);
+    auto scaling_w = gain * sqrt(kernel_h * kernel_w * channels_in);    
 
-    const int half_range_bot_w = (dilation_w*kernel_w)/2;
-    const int half_range_top_w = half_range_bot_w - (dilation_w*kernel_w+1)%2;
+    // Bounds for Ph and Pw
+    const int half_range_h = (dilation_h * kernel_h) / 2;
+    const int half_range_w = (dilation_w * kernel_w) / 2;
+
+    // Preform scaling and add regular spacings
+    auto scaled_P1 = P1 * scaling_h + at::arange(-half_range_h, half_range_h, dilation_h, weight.options())
+                                      .repeat({kernel_w,1})
+                                      .t()
+                                      .repeat({1,channels_in,1,1})
+                                    + ((kernel_h - 1) * dilation_h / 4);
+    auto scaled_P2 = P2 * scaling_w + at::arange(-half_range_w, half_range_w, dilation_w, weight.options())
+                                      .repeat({kernel_h,1})
+                                      .repeat({1,channels_in,1,1})
+                                    + ((kernel_w - 1) * dilation_w / 4);
     
-    // Suitable for Kaiming uniform initialization
-    auto scaling_h = sqrt(kernel_h * kernel_w * channels_in * dilation_h * dilation_h)/2;
-    auto scaling_w = sqrt(kernel_h * kernel_w * channels_in * dilation_w * dilation_w)/2;  
+    // Limits of the dilated kernel
+    const int limit_h = dilation_h * kernel_h;
+    const int limit_w = dilation_w * kernel_w;
     
-    auto scaled_P1 = P1*scaling_h + at::arange(-half_range_bot_h /*+ dilation_h/4*/,half_range_bot_h /*+ 1e-7*/,dilation_h, weight.options())
-                            .repeat({kernel_w,1})
-                            .t()
-                            .repeat({channels_out,channels_in,1,1});
-    auto scaled_P2 = P2*scaling_w + at::arange(-half_range_bot_w /*+ dilation_w/4*/,half_range_bot_w /*+ 1e-7*/,dilation_w, weight.options())
-                            .repeat({kernel_h,1})
-                            .repeat({channels_out,channels_in,1,1});
+    // Add d.k/2, positions are now uniformly around 0 and d.k - 1    
+    auto P_h = scaled_P1 + half_range_h;
+    auto P_w = scaled_P2 + half_range_w;    
+    
+    // Apply floor function, positions are now integers uniformly around 0 and d.k - 1
+    P_h = P_h.floor();
+    P_w = P_w.floor();
+
+    // Apply clamp function, positions are now integers strictly between 0 and d.k - 1
+    P_h = P_h.clamp(0, limit_h - 1); 
+    P_w = P_w.clamp(0, limit_w - 1);     
+    
+    // Calculate rests and masks for interpolation
+    auto rest_h = scaled_P1 + half_range_h;
+    auto mask_h = rest_h.ge(0) * rest_h.le(limit_h - 1);
+    rest_h = rest_h.clamp(0, limit_h - 1) - P_h; 
+    auto rest_w = scaled_P2 + half_range_w;
+    auto mask_w = rest_w.ge(0) * rest_w.le(limit_w - 1);
+    rest_w = rest_w.clamp(0,limit_w - 1) - P_w;
+
+    auto rhW = rest_h * mask_w * weight;
+    auto rwW = rest_w * mask_h * weight;
+    auto rhw = rest_h * rest_w;   
+   
+    // Calculate interpolations and make groups for separable conv 
+    auto grad_bias_g = bias.view({groups, channels_out/groups});
+    auto weight_g = weight.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});     
+    auto grad_weight_g = grad_weight.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});    
+    auto ones = at::ones_like(weight, weight.options()).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
         
+    auto W1 = ((ones.select(0,0) - rest_h - rest_w + rhw) * ones)
+              .view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
+    auto W2 = ((rest_h - rhw) * ones).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
+    auto W3 = ((rest_w - rhw) * ones).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
+    auto W4 = (rhw * ones).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w}); 
     
-    const int height_out = dilation_h * (kernel_h-1) + 1;
-    const int width_out = dilation_w * (kernel_w-1) + 1;
+    auto W1_Ph = (-weight * mask_h + rwW).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
+    auto W2_Ph = -W1_Ph.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
+    auto W3_Ph = -rwW.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
+    auto W4_Ph = -W3_Ph.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
     
-    auto P_h = scaled_P1.floor();
-    auto P_w = scaled_P2.floor();    
+    auto W1_Pw = (-weight * mask_w + rhW).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
+    auto W2_Pw = -rhW.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
+    auto W3_Pw = -W1_Pw.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
+    auto W4_Pw = -W2_Pw.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
     
-    P_h += (dilation_h*kernel_h)/2 ;
-    P_w += (dilation_w*kernel_w)/2 ;
+    // We consider the maximum free memory 
+    long free_memory = constants::GLOBAL_FREE_MEMORY;    
     
-    P_h = P_h.clamp(0,height_out-1); 
-    P_w = P_w.clamp(0,width_out-1);    
+    // Choose chunksize according to total memory (we consider 2d interpolation and float32 tensors thus 4 x 4)
+    const int max_chunk_size = free_memory / (4 * 4 * channels_in * kernel_h * kernel_w * height_out * width_out) + 1;
+    const int nb_chunks = (batch - 1) / max_chunk_size + 1;
     
-    auto rest_h = scaled_P1 + (dilation_h*kernel_h)/2;
-    auto mask_h = rest_h.ge(0) * rest_h.le(height_out-1);
-    rest_h = rest_h.clamp(0,height_out-1) - P_h; 
-    auto rest_w = scaled_P2 + (dilation_w*kernel_w)/2;
-    auto mask_w = rest_w.ge(0) * rest_w.le(width_out-1);
-    rest_w = rest_w.clamp(0,width_out-1) - P_w;    
+    auto chunked_input = input.chunk(nb_chunks,0);
+    auto chunked_grad_input = grad_input.chunk(nb_chunks,0);
+    auto chunked_output = grad_output.chunk(nb_chunks,0);    
     
-
-
-    auto rhW = rest_h * weight * mask_w;
-    auto rwW = rest_w * weight * mask_h;
-    auto rhw = rest_h * rest_w;
-    auto rhwW = rhw * weight;    
-    
-    auto ones = at::ones_like(rest_h, weight.options());
+    auto P_h_g_m = P_h.select(0, 0); 
+    auto P_w_g_m = P_w.select(0, 0);    
         
-    auto W1 = ones - rest_h - rest_w + rhw;
-    auto W2 = rest_h - rhw;
-    auto W3 = rest_w - rhw;
-    auto W4 = rhw; 
-    
-    auto W1_Ph = -weight * mask_h + rwW;
-    auto W2_Ph = -W1_Ph;
-    auto W3_Ph = -rwW;
-    auto W4_Ph = -W3_Ph;
-    
-    auto W1_Pw = -weight * mask_w + rhW ;
-    auto W2_Pw = -rhW;
-    auto W3_Pw = -W1_Pw;
-    auto W4_Pw = -W2_Pw;
-    
-    
-    const int num_kernels = channels_out * channels_in * kernel_h * kernel_w;    
-    AT_DISPATCH_FLOATING_TYPES(weight.type(), "dcls_2d_backward_cuda", [&] {
-             
-        interpolation_grad_kernel<scalar_t><<<GET_BLOCKS(num_kernels), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
-                                     num_kernels,
-                                     grad_output.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     P_h.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     P_w.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     W1.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     W2.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     W3.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     W4.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     channels_out, channels_in,
-                                     kernel_h, kernel_w, 
-                                     height_out, width_out,                                 
-                                     grad_weight.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>());
-        interpolation_grad_kernel<scalar_t><<<GET_BLOCKS(num_kernels), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
-                                     num_kernels,
-                                     grad_output.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     P_h.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     P_w.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     W1_Ph.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     W2_Ph.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     W3_Ph.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     W4_Ph.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     channels_out, channels_in,
-                                     kernel_h, kernel_w, 
-                                     height_out, width_out,                                 
-                                     grad_P1.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>());
-        interpolation_grad_kernel<scalar_t><<<GET_BLOCKS(num_kernels), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
-                                     num_kernels,
-                                     grad_output.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     P_h.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     P_w.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     W1_Pw.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     W2_Pw.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     W3_Pw.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     W4_Pw.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
-                                     channels_out, channels_in,
-                                     kernel_h, kernel_w, 
-                                     height_out, width_out,                                 
-                                     grad_P2.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>()); 
+    // Loop over batch chunks    
+    for (int chunk = 0; chunk < nb_chunks; chunk++) {
+
+        auto input_n = chunked_input[chunk];
+        const int chunk_size = input_n.size(0);
         
-    });
+        auto grad_input_n = chunked_grad_input[chunk];
+        auto grad_output_n = chunked_output[chunk];   
+        auto columns = at::empty({chunk_size, groups * channels_in * kernel_h * kernel_w, height_out * width_out}, input.options());
 
+        auto grad_output_g = grad_output_n.view({groups, chunk_size, channels_out/groups, height_out * width_out});
+        auto columns_g = columns.view({groups, chunk_size, channels_in * kernel_h * kernel_w, height_out * width_out});
+        auto input_g = input_n.view({groups, chunk_size, channels_in, height, width});
+        
+        // Col2im for the gradient with respect to the input
+        for (int g = 0; g < groups; ++g)
+        {
+            auto grad_output_gm = grad_output_g.select(0, g);
+            auto columns_gm = columns_g.select(0, g);
+            auto weight_gm = weight_g.select(0, g).view({channels_out/groups, channels_in * kernel_h * kernel_w}).t();
+            columns_g.select(0, g) = at::matmul(weight_gm, grad_output_gm);
 
-    return {grad_weight,
-            grad_P1*scaling_h,
-            grad_P2*scaling_w};
+        }
+        columns = columns_g.view({chunk_size, groups * channels_in * kernel_h * kernel_w, height_out * width_out});
+        
+        auto num_kernels = chunk_size * channels_in * groups * height * width;
+        AT_DISPATCH_FLOATING_TYPES(input.type(), "col2im_dcls_2d_backward_cuda", [&] {
+            col2im_kernel<scalar_t><<<GET_BLOCKS(num_kernels), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
+                                             num_kernels,
+                                             columns.data<scalar_t>(),
+                                             height, width,
+                                             channels_out,
+                                             kernel_h, kernel_w, 
+                                             padding_h, padding_w, 
+                                             stride_h, stride_w, 
+                                             dilation_h, dilation_w,
+                                             height_out, width_out,                
+                                             grad_input_n.data<scalar_t>());
+        });
+
+        // Loop over groups in case of separable convolution
+        for (int g = 0; g < groups; ++g)
+        {
+            auto grad_output_gm = grad_output_g.select(0, g);                     
+            auto grad_bias_gm = grad_bias_g.select(0, g);
+            
+            auto weights_gm = at::stack({W1.select(0, g), 
+                                         W2.select(0, g), 
+                                         W3.select(0, g), 
+                                         W4.select(0, g)},0);
+            auto weights_gm_Ph = at::stack({W1_Ph.select(0, g), 
+                                            W2_Ph.select(0, g), 
+                                            W3_Ph.select(0, g), 
+                                            W4_Ph.select(0, g)},0);
+            auto weights_gm_Pw = at::stack({W1_Pw.select(0, g), 
+                                            W2_Pw.select(0, g), 
+                                            W3_Pw.select(0, g), 
+                                            W4_Pw.select(0, g)},0);            
+            // Call im2col_dcls + matmul
+            auto grads =  mm_dcls_2d_backward(input_g.select(0,g), weights_gm,  
+                                           weights_gm_Ph,  weights_gm_Pw, grad_output_gm, 
+                                           P_h_g_m, P_w_g_m, dilation_h, dilation_w, 
+                                           padding_h, padding_w, stride_h, stride_w,
+                                           height_out, width_out);
+
+            grad_weight_g.select(0, g) += grads[0].view_as(grad_weight_g.select(0, g));
+            grad_P1 += grads[1].view_as(grad_P1); 
+            grad_P2 += grads[2].view_as(grad_P2);
+            
+            // Batch-matrix times vector multiplication is applied to calculate the gradient of the bias,
+            // then we sum over chunk size
+            grad_bias_g.select(0, g) = grad_bias_gm + at::matmul(grad_output_gm, 
+                                                 at::ones({height_out * width_out}, input.options())).sum(0);
+        }
+
+        grad_weight = grad_weight_g.view({channels_out, channels_in, kernel_h, kernel_w});
+        grad_P1 = grad_P1.view({channels_in, kernel_h, kernel_w}) / groups;
+        grad_P2 = grad_P2.view({channels_in, kernel_h, kernel_w}) / groups;
+    }
+                                    
+    // Only if input was of dim 3    
+    if (!is_batch) grad_input = grad_input.squeeze(0);
+
+    return {grad_input,
+            grad_weight,
+            grad_P1 * scaling_h, // apply the scaling
+            grad_P2 * scaling_w, // apply the scaling
+            grad_bias};
 }

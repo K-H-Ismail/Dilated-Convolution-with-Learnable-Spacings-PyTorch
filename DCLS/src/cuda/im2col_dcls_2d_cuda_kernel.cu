@@ -10,6 +10,9 @@
 #include <vector>
 #include <assert.h>
 
+#include <stdio.h>
+
+
 #define CUDA_KERNEL_LOOP(i, n)                                                 \
   for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < (n);                 \
        i += blockDim.x * gridDim.x)
@@ -20,10 +23,14 @@ inline int GET_BLOCKS(const int N) {
   return std::min(kMaxGridNum, (N + CUDA_NUM_THREADS - 1) / CUDA_NUM_THREADS);
 }
 
-inline int GET_FREE_MEMORY() {
+inline long GET_FREE_MEMORY() {
   size_t free, total;
   cudaMemGetInfo(&free, &total);
-  return free;
+  return static_cast<long>(free) > 0 ? static_cast<long>(free) : 1;
+}
+
+namespace constants {
+    const long GLOBAL_FREE_MEMORY = GET_FREE_MEMORY();
 }
 
 // col2im kernel, identical to the one in CuDNN 
@@ -84,7 +91,7 @@ __global__ void col2im_kernel(
 
 // Adaptation of im2col kernel to dcls case 
 template <typename scalar_t>
-__global__ void im2col_dcls_batch_kernel(
+__global__ void im2col_dcls_2d_batch_kernel(
     const int n,
     torch::PackedTensorAccessor32<scalar_t,4,torch::RestrictPtrTraits> input,
     torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> P_h, 
@@ -130,7 +137,7 @@ __global__ void im2col_dcls_batch_kernel(
 }
 
 // Wrapper for im2col dcls kernel
-torch::Tensor  im2col_dcls_batch_cuda(
+torch::Tensor  im2col_dcls_2d_batch_cuda(
     torch::Tensor im,
     torch::Tensor P_h, torch::Tensor P_w,     
     const int dilation_h, const int dilation_w, 
@@ -152,9 +159,9 @@ torch::Tensor  im2col_dcls_batch_cuda(
     
     const int num_kernels = batch_size * channels_in * height_out * width_out;
     
-    AT_DISPATCH_FLOATING_TYPES(im.type(), "im2col_dcls_batch_cuda", [&] {
+    AT_DISPATCH_FLOATING_TYPES(im.type(), "im2col_dcls_2d_batch_cuda", [&] {
 
-        im2col_dcls_batch_kernel<scalar_t><<<GET_BLOCKS(num_kernels), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
+        im2col_dcls_2d_batch_kernel<scalar_t><<<GET_BLOCKS(num_kernels), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
                                          num_kernels,
                                          im.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
                                          P_h.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
@@ -172,7 +179,7 @@ torch::Tensor  im2col_dcls_batch_cuda(
     return columns;
 }
 
-torch::Tensor  mm_dcls_forward(
+torch::Tensor  mm_dcls_2d_forward(
     torch::Tensor im,
     torch::Tensor weights,    
     torch::Tensor P_h, torch::Tensor P_w,     
@@ -193,7 +200,7 @@ torch::Tensor  mm_dcls_forward(
     auto output = at::zeros({batch_size, channels_out, height_out * width_out}, im.options());
    
     // Call im2col dcls
-    auto columns = im2col_dcls_batch_cuda(im, P_h, P_w, dilation_h, dilation_w, padding_h, padding_w, 
+    auto columns = im2col_dcls_2d_batch_cuda(im, P_h, P_w, dilation_h, dilation_w, padding_h, padding_w, 
                                           stride_h, stride_w, height_out, width_out);
     
     // Apply matrix-matrix multiplication
@@ -203,7 +210,7 @@ torch::Tensor  mm_dcls_forward(
     return output; 
 }
 
-std::vector<torch::Tensor> mm_dcls_backward(
+std::vector<torch::Tensor> mm_dcls_2d_backward(
     torch::Tensor im,
     torch::Tensor weights,
     torch::Tensor weights_Ph,
@@ -220,32 +227,31 @@ std::vector<torch::Tensor> mm_dcls_backward(
     // Weights contains the interpolated weights 
     // weights tensor has a size of 4 x channels_out x channels_in x kernel_h x kernel_w    
     const int channels_out = weights[0].size(0);
-    const int channels_in = weights[0].size(1);
-    const int kernel_h = weights[0].size(2);
-    const int kernel_w = weights[0].size(3); 
+    const int channels_in = P_h.size(0);
+    const int kernel_h = P_h.size(1);
+    const int kernel_w = P_h.size(2); 
     
     // grad_weights is a 4 x channels_out x channels_in * kernel_h * kernel_w  tensor
     // this intermediate variable will serve to calculate grads with respect to weights, Ph and Pw       
-    auto grad_weights = at::zeros({4, channels_out, channels_in * kernel_h * kernel_w}, im.options());  
+    //auto grad_weights = at::zeros({4, channels_out, channels_in * kernel_h * kernel_w}, im.options());  
    
     // Call im2col dcls
-    auto columns = im2col_dcls_batch_cuda(im, P_h, P_w, dilation_h, dilation_w, padding_h, padding_w, 
+    auto columns = im2col_dcls_2d_batch_cuda(im, P_h, P_w, dilation_h, dilation_w, padding_h, padding_w, 
                                           stride_h, stride_w, height_out, width_out);
 
     // Apply matrix-matrix multiplication
-    // 4 matrix-matrix multiplications are made, then 3 elements-wise multiplications
-    // could probably be reduced to 3 matrix-matrix multiplications and 4 einsums ...
-    for (int i = 0; i < 4; ++i) {
-        grad_weights.select(0,i) = at::matmul(grad, columns.select(1,i).permute({0,2,1})).sum(0);  
-    }
+    auto grad_weights = (at::matmul(grad.unsqueeze(1), columns.permute({0, 1, 3, 2}))).sum(0);
     
+    //std::cout << weights_Ph.mean() << std::endl;
+    //std::cout << grad_weights.mean() << std::endl;
+
     // Sum over interpolations and take mean value over channels_out of positions
     auto grad_weight = (grad_weights * weights.view({4, channels_out, channels_in * kernel_h * kernel_w})).sum(0);
     auto grad_Ph = (grad_weights * weights_Ph.view({4, channels_out, channels_in * kernel_h * kernel_w})).sum(0).mean(0);
     auto grad_Pw = (grad_weights * weights_Pw.view({4, channels_out, channels_in * kernel_h * kernel_w})).sum(0).mean(0);
     
     return {grad_weight,
-            grad_Ph,
-            grad_Pw};
+            at::tanh(grad_Ph / (grad_Ph.norm() + 1e-7)),
+            at::tanh(grad_Pw / (grad_Pw.norm() + 1e-7))};
     
 }
