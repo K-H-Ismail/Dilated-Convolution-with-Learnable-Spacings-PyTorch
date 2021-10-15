@@ -100,7 +100,7 @@ torch::Tensor  dcls_2d_cuda_forward(
     long free_memory = constants::GLOBAL_FREE_MEMORY;
     
     // Choose chunksize according to total memory (we consider 2d interpolation and float32 tensors thus 4 x 4)
-    const int max_chunk_size = free_memory / (4 * 4 * channels_in * kernel_h * kernel_w * height_out * width_out) + 1;
+    const int max_chunk_size = free_memory / (4 * 4 * channels_in * groups * kernel_h * kernel_w * height_out * width_out) + 1;
     
     const int nb_chunks = (batch - 1) / max_chunk_size + 1;
     
@@ -116,24 +116,19 @@ torch::Tensor  dcls_2d_cuda_forward(
         auto input_n = chunked_input[chunk];
         const int chunk_size = input_n.size(0);
 
-        auto input_g = input_n.view({groups, chunk_size, channels_in, height, width});       
-        auto output_g = at::zeros({groups, chunk_size, channels_out/groups, height_out * width_out}, input.options());
+        auto input_g = input_n.view({chunk_size, groups, channels_in, height, width});       
+        auto output_g = at::zeros({chunk_size, groups, channels_out/groups, height_out * width_out}, input.options());
         
-        // Loop over groups in case of separable convolution
-        for (int g = 0; g < groups; ++g)
-        {
-            auto weights_gm = at::stack({W1.select(0, g), 
-                                         W2.select(0, g), 
-                                         W3.select(0, g), 
-                                         W4.select(0, g)},1);
-            // Call im2col_dcls + matmul
-            auto output_m =  mm_dcls_2d_forward(input_g.select(0,g), weights_gm, P_h_g_m, P_w_g_m, 
-                                             dilation_h, dilation_w, padding_h, padding_w, 
-                                             stride_h, stride_w, height_out, width_out);
-            output_g.select(0, g) = output_m;
-        }
-        
-        auto output_chunk = output_g.view({chunk_size, channels_out, height_out, width_out});
+        auto weights_gm = at::stack({W1, 
+                                     W2, 
+                                     W3, 
+                                     W4},2);
+        // Call im2col_dcls + matmul
+        auto output_m =  mm_dcls_2d_forward(input_g, weights_gm, P_h_g_m, P_w_g_m, 
+                                         dilation_h, dilation_w, padding_h, padding_w, 
+                                         stride_h, stride_w, height_out, width_out);
+            
+        auto output_chunk = output_m.view({chunk_size, channels_out, height_out, width_out});
         
         // Concatenate outputs along chunks
         output = chunk == 0 ?  output_chunk : at::cat({output, output_chunk},0);
@@ -141,7 +136,7 @@ torch::Tensor  dcls_2d_cuda_forward(
     
     // Only if input was of dim 3
     if (!is_batch) output = output.squeeze(0);
-    
+
     return output;
 }
 
@@ -261,7 +256,7 @@ std::vector<torch::Tensor> dcls_2d_cuda_backward(
     long free_memory = constants::GLOBAL_FREE_MEMORY;    
     
     // Choose chunksize according to total memory (we consider 2d interpolation and float32 tensors thus 4 x 4)
-    const int max_chunk_size = free_memory / (4 * 4 * channels_in * kernel_h * kernel_w * height_out * width_out) + 1;
+    const int max_chunk_size = free_memory / (4 * 4 * channels_in * groups * kernel_h * kernel_w * height_out * width_out) + 1;
     const int nb_chunks = (batch - 1) / max_chunk_size + 1;
     
     auto chunked_input = input.chunk(nb_chunks,0);
@@ -281,19 +276,14 @@ std::vector<torch::Tensor> dcls_2d_cuda_backward(
         auto grad_output_n = chunked_output[chunk];   
         auto columns = at::empty({chunk_size, groups * channels_in * kernel_h * kernel_w, height_out * width_out}, input.options());
 
-        auto grad_output_g = grad_output_n.view({groups, chunk_size, channels_out/groups, height_out * width_out});
-        auto columns_g = columns.view({groups, chunk_size, channels_in * kernel_h * kernel_w, height_out * width_out});
-        auto input_g = input_n.view({groups, chunk_size, channels_in, height, width});
+        auto grad_output_g = grad_output_n.view({chunk_size, groups, channels_out/groups, height_out * width_out});
+        auto columns_g = columns.view({chunk_size, groups, channels_in * kernel_h * kernel_w, height_out * width_out});
+        auto input_g = input_n.view({chunk_size, groups, channels_in, height, width});
         
         // Col2im for the gradient with respect to the input
-        for (int g = 0; g < groups; ++g)
-        {
-            auto grad_output_gm = grad_output_g.select(0, g);
-            auto columns_gm = columns_g.select(0, g);
-            auto weight_gm = weight_g.select(0, g).view({channels_out/groups, channels_in * kernel_h * kernel_w}).t();
-            columns_g.select(0, g) = at::matmul(weight_gm, grad_output_gm);
-
-        }
+        auto weight_gm = weight_g.view({groups, channels_out/groups, channels_in * kernel_h * kernel_w}).permute({0,2,1});
+        columns_g = at::matmul(weight_gm, grad_output_g);
+        
         columns = columns_g.view({chunk_size, groups * channels_in * kernel_h * kernel_w, height_out * width_out});
         
         auto num_kernels = chunk_size * channels_in * groups * height * width;
@@ -310,45 +300,35 @@ std::vector<torch::Tensor> dcls_2d_cuda_backward(
                                              height_out, width_out,                
                                              grad_input_n.data<scalar_t>());
         });
+      
+        auto weights_gm = at::stack({W1, 
+                                     W2, 
+                                     W3, 
+                                     W4},1);
+        auto weights_gm_Ph = at::stack({W1_Ph, 
+                                        W2_Ph, 
+                                        W3_Ph, 
+                                        W4_Ph},1);
+        auto weights_gm_Pw = at::stack({W1_Pw, 
+                                        W2_Pw, 
+                                        W3_Pw, 
+                                        W4_Pw},1);            
+        // Call im2col_dcls + matmul
+        auto grads =  mm_dcls_2d_backward(input_g, weights_gm,  
+                                       weights_gm_Ph,  weights_gm_Pw, grad_output_g, 
+                                       P_h_g_m, P_w_g_m, dilation_h, dilation_w, 
+                                       padding_h, padding_w, stride_h, stride_w,
+                                       height_out, width_out);
 
-        // Loop over groups in case of separable convolution
-        for (int g = 0; g < groups; ++g)
-        {
-            auto grad_output_gm = grad_output_g.select(0, g);                     
-            auto grad_bias_gm = grad_bias_g.select(0, g);
-            
-            auto weights_gm = at::stack({W1.select(0, g), 
-                                         W2.select(0, g), 
-                                         W3.select(0, g), 
-                                         W4.select(0, g)},0);
-            auto weights_gm_Ph = at::stack({W1_Ph.select(0, g), 
-                                            W2_Ph.select(0, g), 
-                                            W3_Ph.select(0, g), 
-                                            W4_Ph.select(0, g)},0);
-            auto weights_gm_Pw = at::stack({W1_Pw.select(0, g), 
-                                            W2_Pw.select(0, g), 
-                                            W3_Pw.select(0, g), 
-                                            W4_Pw.select(0, g)},0);            
-            // Call im2col_dcls + matmul
-            auto grads =  mm_dcls_2d_backward(input_g.select(0,g), weights_gm,  
-                                           weights_gm_Ph,  weights_gm_Pw, grad_output_gm, 
-                                           P_h_g_m, P_w_g_m, dilation_h, dilation_w, 
-                                           padding_h, padding_w, stride_h, stride_w,
-                                           height_out, width_out);
+        grad_weight += grads[0].view({channels_out, channels_in, kernel_h, kernel_w});
+        grad_P1 += grads[1].view_as(grad_P1); 
+        grad_P2 += grads[2].view_as(grad_P2);
 
-            grad_weight_g.select(0, g) += grads[0].view_as(grad_weight_g.select(0, g));
-            grad_P1 += grads[1].view_as(grad_P1); 
-            grad_P2 += grads[2].view_as(grad_P2);
-            
-            // Batch-matrix times vector multiplication is applied to calculate the gradient of the bias,
-            // then we sum over chunk size
-            grad_bias_g.select(0, g) = grad_bias_gm + at::matmul(grad_output_gm, 
-                                                 at::ones({height_out * width_out}, input.options())).sum(0);
-        }
+        // Batch-matrix times vector multiplication is applied to calculate the gradient of the bias,
+        // then we sum over chunk size
+        grad_bias +=  at::matmul(grad_output_g, at::ones({height_out * width_out}, input.options())).sum(0).view_as(grad_bias);
 
-        grad_weight = grad_weight_g.view({channels_out, channels_in, kernel_h, kernel_w});
-        grad_P1 = grad_P1.view({channels_in, kernel_h, kernel_w}) / groups;
-        grad_P2 = grad_P2.view({channels_in, kernel_h, kernel_w}) / groups;
+
     }
                                     
     // Only if input was of dim 3    
