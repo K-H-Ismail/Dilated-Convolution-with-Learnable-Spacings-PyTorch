@@ -109,7 +109,10 @@ torch::Tensor  dcls_2d_cuda_forward(
     auto output = at::zeros({}, input.options());
     auto P_h_g_m = P_h.select(0, 0); 
     auto P_w_g_m = P_w.select(0, 0);    
-    
+    auto weights_gm = at::stack({W1, 
+                                 W2, 
+                                 W3, 
+                                 W4},2);    
     // Loop over batch chunks
     for (int chunk = 0; chunk < nb_chunks; chunk++) {
 
@@ -119,10 +122,6 @@ torch::Tensor  dcls_2d_cuda_forward(
         auto input_g = input_n.view({chunk_size, groups, channels_in, height, width});       
         auto output_g = at::zeros({chunk_size, groups, channels_out/groups, height_out * width_out}, input.options());
         
-        auto weights_gm = at::stack({W1, 
-                                     W2, 
-                                     W3, 
-                                     W4},2);
         // Call im2col_dcls + matmul
         auto output_m =  mm_dcls_2d_forward(input_g, weights_gm, P_h_g_m, P_w_g_m, 
                                          dilation_h, dilation_w, padding_h, padding_w, 
@@ -262,10 +261,24 @@ std::vector<torch::Tensor> dcls_2d_cuda_backward(
     auto chunked_input = input.chunk(nb_chunks,0);
     auto chunked_grad_input = grad_input.chunk(nb_chunks,0);
     auto chunked_output = grad_output.chunk(nb_chunks,0);    
-    
+
     auto P_h_g_m = P_h.select(0, 0); 
-    auto P_w_g_m = P_w.select(0, 0);    
-        
+    auto P_w_g_m = P_w.select(0, 0);
+    
+    auto weights_gm = at::stack({W1, 
+                                 W2, 
+                                 W3, 
+                                 W4},1);
+    auto weights_gm_Ph = at::stack({W1_Ph, 
+                                    W2_Ph, 
+                                    W3_Ph, 
+                                    W4_Ph},1);
+    auto weights_gm_Pw = at::stack({W1_Pw, 
+                                    W2_Pw, 
+                                    W3_Pw, 
+                                    W4_Pw},1);
+    auto weight_gm = weight_g.view({groups, channels_out/groups, channels_in * kernel_h * kernel_w}).permute({0,2,1});
+
     // Loop over batch chunks    
     for (int chunk = 0; chunk < nb_chunks; chunk++) {
 
@@ -281,8 +294,7 @@ std::vector<torch::Tensor> dcls_2d_cuda_backward(
         auto input_g = input_n.view({chunk_size, groups, channels_in, height, width});
         
         // Col2im for the gradient with respect to the input
-        auto weight_gm = weight_g.view({groups, channels_out/groups, channels_in * kernel_h * kernel_w}).permute({0,2,1});
-        columns_g = at::matmul(weight_gm, grad_output_g);
+       /* columns_g = at::matmul(weight_gm, grad_output_g);
         
         columns = columns_g.view({chunk_size, groups * channels_in * kernel_h * kernel_w, height_out * width_out});
         
@@ -299,20 +311,9 @@ std::vector<torch::Tensor> dcls_2d_cuda_backward(
                                              dilation_h, dilation_w,
                                              height_out, width_out,                
                                              grad_input_n.data<scalar_t>());
-        });
+        });*/
       
-        auto weights_gm = at::stack({W1, 
-                                     W2, 
-                                     W3, 
-                                     W4},1);
-        auto weights_gm_Ph = at::stack({W1_Ph, 
-                                        W2_Ph, 
-                                        W3_Ph, 
-                                        W4_Ph},1);
-        auto weights_gm_Pw = at::stack({W1_Pw, 
-                                        W2_Pw, 
-                                        W3_Pw, 
-                                        W4_Pw},1);            
+            
         // Call im2col_dcls + matmul
         auto grads =  mm_dcls_2d_backward(input_g, weights_gm,  
                                        weights_gm_Ph,  weights_gm_Pw, grad_output_g, 
@@ -336,7 +337,7 @@ std::vector<torch::Tensor> dcls_2d_cuda_backward(
 
     return {grad_input,
             grad_weight,
-            grad_P1 * scaling_h, // apply the scaling
-            grad_P2 * scaling_w, // apply the scaling
+            at::sign(grad_P1 * scaling_h), // apply the scaling
+            at::sign(grad_P2 * scaling_w), // apply the scaling
             grad_bias};
 }

@@ -210,7 +210,7 @@ torch::Tensor  mm_dcls_2d_forward(
     
     // Apply matrix-matrix multiplication
     output = at::matmul(weights.view({groups, channels_out, 4 * channels_in * kernel_h * kernel_w}), 
-                    columns.view({batch_size, groups, 4 * channels_in * kernel_h * kernel_w, height_out * width_out}));
+                        columns.view({batch_size, groups, 4 * channels_in * kernel_h * kernel_w, height_out * width_out}));
 
     return output; 
 }
@@ -242,11 +242,10 @@ std::vector<torch::Tensor> mm_dcls_2d_backward(
    
     // Call im2col dcls
     auto columns = im2col_dcls_2d_batch_cuda(im, P_h, P_w, dilation_h, dilation_w, padding_h, padding_w, 
-                                          stride_h, stride_w, height_out, width_out);
+                                             stride_h, stride_w, height_out, width_out);
 
     // Apply matrix-matrix multiplication
     auto grad_weights = (at::matmul(grad.unsqueeze(2), columns.permute({0, 1, 2, 4, 3}))).sum(0);
-    
 
     // Sum over interpolations and groups, and take mean value over channels_out of positions
     auto grad_weight = (grad_weights * weights.view({groups, 4, channels_out, channels_in * kernel_h * kernel_w})).sum(1);
@@ -256,7 +255,7 @@ std::vector<torch::Tensor> mm_dcls_2d_backward(
                                                                                                   .sum(1).sum(0).mean(0);
     
     return {grad_weight,
-            at::sign(grad_Ph),
-            at::sign(grad_Pw)};
+            grad_Ph,
+            grad_Pw};
     
 }
