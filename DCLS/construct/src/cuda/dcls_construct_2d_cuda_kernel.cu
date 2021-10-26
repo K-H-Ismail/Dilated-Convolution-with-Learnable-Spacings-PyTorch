@@ -99,7 +99,8 @@ torch::Tensor  dcls_construct_2d_cuda_forward(
     torch::Tensor weight,
     torch::Tensor P1,
     torch::Tensor P2,
-    const int dilation_h, const int dilation_w
+    const int dilation_h, const int dilation_w,
+    const float gain
     ) {
     
     const int channels_out = weight.size(0);
@@ -107,36 +108,44 @@ torch::Tensor  dcls_construct_2d_cuda_forward(
     const int kernel_h = weight.size(2);
     const int kernel_w = weight.size(3);
     
-    // Suitable for Kaiming uniform initialization
-    auto scaling_h = sqrt(kernel_h * kernel_w * channels_in * dilation_h * dilation_h)/2;
-    auto scaling_w = sqrt(kernel_h * kernel_w * channels_in * dilation_w * dilation_w)/2;    
- 
-    const int half_range_bot_h = (dilation_h*kernel_h)/2;
-
-    const int half_range_bot_w = (dilation_w*kernel_w)/2;
+    // Suitable scaling for Kaiming uniform initialization
+    auto scaling_h = gain * sqrt(kernel_h * kernel_w * channels_in * channels_out);
+    auto scaling_w = gain * sqrt(kernel_h * kernel_w * channels_in * channels_out);    
+     
+    // Bounds for Ph and Pw
+    const int half_range_h = (dilation_h * kernel_h) / 2;
+    const int half_range_w = (dilation_w * kernel_w) / 2;
     
-    auto scaled_P1 = P1*scaling_h + at::arange(-half_range_bot_h /*+ dilation_h/4*/,half_range_bot_h /*+ 1e-7*/,dilation_h, weight.options())
-                            .repeat({kernel_w,1})
-                            .t()
-                            .repeat({channels_out,channels_in,1,1});
-    auto scaled_P2 = P2*scaling_w + at::arange(-half_range_bot_w /*+ dilation_w/4*/,half_range_bot_w /*+ 1e-7*/,dilation_w, weight.options())
-                            .repeat({kernel_h,1})
-                            .repeat({channels_out,channels_in,1,1});
-        
-    const int height_out = dilation_h * (kernel_h-1) + 1;
-    const int width_out = dilation_w * (kernel_w-1) + 1;
+    // Preform scaling and add regular spacings
+    auto scaled_P1 = P1 * scaling_h + at::arange(-half_range_h, half_range_h, dilation_h, weight.options())
+                                      .repeat({kernel_w,1})
+                                      .t()
+                                      .repeat({1,channels_in,1,1})
+                                    /*+ ((kernel_h - 1) * dilation_h / 4)*/;
+    auto scaled_P2 = P2 * scaling_w + at::arange(-half_range_w, half_range_w, dilation_w, weight.options())
+                                      .repeat({kernel_h,1})
+                                      .repeat({1,channels_in,1,1})
+                                    /*+ ((kernel_w - 1) * dilation_w / 4)*/;
     
-    auto P_h = scaled_P1.floor();
-    auto P_w = scaled_P2.floor();    
+    // Limits of the dilated kernel
+    const int limit_h = dilation_h * (kernel_h - 1) + 1;
+    const int limit_w = dilation_w * (kernel_w - 1) + 1;
     
-    P_h += (dilation_h*kernel_h)/2 ;
-    P_w += (dilation_w*kernel_w)/2 ;
+    // Add d.k/2, positions are now uniformly around 0 and d.k - 1    
+    auto P_h = scaled_P1 + half_range_h;
+    auto P_w = scaled_P2 + half_range_w;    
     
-    P_h = P_h.clamp(0,height_out-1); 
-    P_w = P_w.clamp(0,width_out-1);    
+    // Apply floor function, positions are now integers uniformly around 0 and d.k - 1
+    P_h = P_h.floor();
+    P_w = P_w.floor();
     
-    auto rest_h = (scaled_P1 + (dilation_h*kernel_h)/2).clamp(0,height_out-1) - P_h; 
-    auto rest_w = (scaled_P2 + (dilation_w*kernel_w)/2).clamp(0,width_out-1) - P_w;    
+    // Apply clamp function, positions are now integers strictly between 0 and d.k - 1
+    P_h = P_h.clamp(0, limit_h - 1); 
+    P_w = P_w.clamp(0, limit_w - 1);    
+    
+    // Calculate rests for interpolation
+    auto rest_h = (scaled_P1 + half_range_h).clamp(0, limit_h - 1) - P_h; 
+    auto rest_w = (scaled_P2 + half_range_w).clamp(0, limit_w - 1) - P_w; 
     
     auto rhW = rest_h * weight;
     auto rwW = rest_w * weight;
@@ -146,7 +155,7 @@ torch::Tensor  dcls_construct_2d_cuda_forward(
     auto W3 = rwW - rhwW;
     auto W4 = rhwW;    
     
-    auto output = torch::zeros({channels_out, channels_in, height_out, width_out}, weight.options());
+    auto output = torch::zeros({channels_out, channels_in, limit_h, limit_w}, weight.options());
     
     const int num_kernels =  channels_out * channels_in * kernel_h * kernel_w ;
     AT_DISPATCH_FLOATING_TYPES(weight.type(), "dcls_construct_2d_forward_cuda", [&] {
@@ -161,7 +170,7 @@ torch::Tensor  dcls_construct_2d_cuda_forward(
                                      W4.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
                                      channels_out, channels_in,
                                      kernel_h, kernel_w,
-                                     height_out, width_out,
+                                     limit_h, limit_w,
                                      output.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>());
     });    
     return output;
@@ -172,7 +181,8 @@ std::vector<torch::Tensor> dcls_construct_2d_cuda_backward(
     torch::Tensor P1,
     torch::Tensor P2,
     torch::Tensor grad_output,      
-    const int dilation_h, const int dilation_w
+    const int dilation_h, const int dilation_w,
+    const float gain
     ) {
     
     auto grad_weight = torch::zeros_like(weight);
@@ -184,45 +194,51 @@ std::vector<torch::Tensor> dcls_construct_2d_cuda_backward(
     const int kernel_h = weight.size(2);
     const int kernel_w = weight.size(3);
     
-    const int half_range_bot_h = (dilation_h*kernel_h)/2;
-    const int half_range_top_h = half_range_bot_h - (dilation_h*kernel_h+1)%2;    
-
-    const int half_range_bot_w = (dilation_w*kernel_w)/2;
-    const int half_range_top_w = half_range_bot_w - (dilation_w*kernel_w+1)%2;
     
-    // Suitable for Kaiming uniform initialization
-    auto scaling_h = sqrt(kernel_h * kernel_w * channels_in * dilation_h * dilation_h)/2;
-    auto scaling_w = sqrt(kernel_h * kernel_w * channels_in * dilation_w * dilation_w)/2;  
+    // Suitable scaling for Kaiming uniform initialization
+    auto scaling_h = gain * sqrt(kernel_h * kernel_w * channels_in * channels_out);
+    auto scaling_w = gain * sqrt(kernel_h * kernel_w * channels_in * channels_out);    
+     
+    // Bounds for Ph and Pw
+    const int half_range_h = (dilation_h * kernel_h) / 2;
+    const int half_range_w = (dilation_w * kernel_w) / 2;
     
-    auto scaled_P1 = P1*scaling_h + at::arange(-half_range_bot_h /*+ dilation_h/4*/,half_range_bot_h /*+ 1e-7*/,dilation_h, weight.options())
-                            .repeat({kernel_w,1})
-                            .t()
-                            .repeat({channels_out,channels_in,1,1});
-    auto scaled_P2 = P2*scaling_w + at::arange(-half_range_bot_w /*+ dilation_w/4*/,half_range_bot_w /*+ 1e-7*/,dilation_w, weight.options())
-                            .repeat({kernel_h,1})
-                            .repeat({channels_out,channels_in,1,1});
-        
+    // Preform scaling and add regular spacings
+    auto scaled_P1 = P1 * scaling_h + at::arange(-half_range_h, half_range_h, dilation_h, weight.options())
+                                      .repeat({kernel_w,1})
+                                      .t()
+                                      .repeat({1,channels_in,1,1})
+                                    /*+ ((kernel_h - 1) * dilation_h / 4)*/;
+    auto scaled_P2 = P2 * scaling_w + at::arange(-half_range_w, half_range_w, dilation_w, weight.options())
+                                      .repeat({kernel_h,1})
+                                      .repeat({1,channels_in,1,1})
+                                    /*+ ((kernel_w - 1) * dilation_w / 4)*/;
     
-    const int height_out = dilation_h * (kernel_h-1) + 1;
-    const int width_out = dilation_w * (kernel_w-1) + 1;
+    // Limits of the dilated kernel
+    const int limit_h = dilation_h * (kernel_h - 1) + 1;
+    const int limit_w = dilation_w * (kernel_w - 1) + 1;
     
-    auto P_h = scaled_P1.floor();
-    auto P_w = scaled_P2.floor();    
+    // Add d.k/2, positions are now uniformly around 0 and d.k - 1    
+    auto P_h = scaled_P1 + half_range_h;
+    auto P_w = scaled_P2 + half_range_w;    
     
-    P_h += (dilation_h*kernel_h)/2 ;
-    P_w += (dilation_w*kernel_w)/2 ;
+    // Apply floor function, positions are now integers uniformly around 0 and d.k - 1
+    P_h = P_h.floor();
+    P_w = P_w.floor();
     
-    P_h = P_h.clamp(0,height_out-1); 
-    P_w = P_w.clamp(0,width_out-1);    
+    // Apply clamp function, positions are now integers strictly between 0 and d.k - 1
+    P_h = P_h.clamp(0, limit_h - 1); 
+    P_w = P_w.clamp(0, limit_w - 1);    
     
-    auto rest_h = scaled_P1 + (dilation_h*kernel_h)/2;
-    auto mask_h = rest_h.ge(0) * rest_h.le(height_out-1);
-    rest_h = rest_h.clamp(0,height_out-1) - P_h; 
-    auto rest_w = scaled_P2 + (dilation_w*kernel_w)/2;
-    auto mask_w = rest_w.ge(0) * rest_w.le(width_out-1);
-    rest_w = rest_w.clamp(0,width_out-1) - P_w;    
+    // Calculate rests for interpolation
     
-
+    auto rest_h = scaled_P1 + half_range_h;
+    auto mask_h = rest_h.ge(0) * rest_h.le(limit_h-1);
+    rest_h = rest_h.clamp(0,limit_h-1) - P_h; 
+    auto rest_w = scaled_P2 + half_range_w;
+    auto mask_w = rest_w.ge(0) * rest_w.le(limit_w-1);
+    rest_w = rest_w.clamp(0,limit_w-1) - P_w;    
+    
 
     auto rhW = rest_h * weight * mask_w;
     auto rwW = rest_w * weight * mask_h;
@@ -261,7 +277,7 @@ std::vector<torch::Tensor> dcls_construct_2d_cuda_backward(
                                      W4.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
                                      channels_out, channels_in,
                                      kernel_h, kernel_w, 
-                                     height_out, width_out,                                 
+                                     limit_h, limit_w,                                 
                                      grad_weight.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>());
         interpolation_grad_kernel<scalar_t><<<GET_BLOCKS(num_kernels), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
                                      num_kernels,
@@ -274,7 +290,7 @@ std::vector<torch::Tensor> dcls_construct_2d_cuda_backward(
                                      W4_Ph.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
                                      channels_out, channels_in,
                                      kernel_h, kernel_w, 
-                                     height_out, width_out,                                 
+                                     limit_h, limit_w,                                 
                                      grad_P1.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>());
         interpolation_grad_kernel<scalar_t><<<GET_BLOCKS(num_kernels), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
                                      num_kernels,
@@ -287,7 +303,7 @@ std::vector<torch::Tensor> dcls_construct_2d_cuda_backward(
                                      W4_Pw.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>(),
                                      channels_out, channels_in,
                                      kernel_h, kernel_w, 
-                                     height_out, width_out,                                 
+                                     limit_h, limit_w,                                 
                                      grad_P2.packed_accessor32<scalar_t,4,torch::RestrictPtrTraits>()); 
         
     });
