@@ -166,7 +166,7 @@ class _DclsNd(Module):
 
     __constants__ = ['stride', 'padding', 'dilation', 'groups',
                      'padding_mode', 'output_padding', 'in_channels',
-                     'out_channels', 'kernel_size']
+                     'out_channels', 'kernel_size', 'gain']
     __annotations__ = {'bias': Optional[torch.Tensor]}
 
     def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor]) -> Tensor:
@@ -184,7 +184,8 @@ class _DclsNd(Module):
     padding_mode: str
     weight: Tensor
     bias: Optional[Tensor]      
-
+    gain: float 
+        
     def __init__(self,
                  in_channels: int,
                  out_channels: int,
@@ -196,7 +197,8 @@ class _DclsNd(Module):
                  output_padding: Tuple[int, ...],
                  groups: int,
                  bias: bool,
-                 padding_mode: str) -> None:
+                 padding_mode: str,
+                 gain: float) -> None:
         super(_DclsNd, self).__init__()
         if in_channels % groups != 0:
             raise ValueError('in_channels must be divisible by groups')
@@ -215,6 +217,7 @@ class _DclsNd(Module):
         self.transposed = transposed
         self.output_padding = output_padding
         self.groups = groups
+        self.gain = gain        
         self.padding_mode = padding_mode
         # `_reversed_padding_repeated_twice` is the padding to be passed to
         # `F.pad` if needed (e.g., for non-zero padding types that are
@@ -242,8 +245,9 @@ class _DclsNd(Module):
             bound = 1 / math.sqrt(fan_in)
             init.uniform_(self.bias, -bound, bound)
         #init.zeros_(self.P)     
-        for i in range(len(self.kernel_size)): 
-            init.kaiming_uniform_(self.P[i,:], a=math.sqrt(5))        
+        for i in range(len(self.kernel_size)):
+            std = (self.dilation[i]/2) / (self.gain * math.sqrt(self.out_channels * (self.in_channels // self.groups) * self.kernel_size[0] * self.kernel_size[1]))             
+            init.normal_(self.P.select(0,i), 0.0, std)     
         
         
     def extra_repr(self):
@@ -253,6 +257,8 @@ class _DclsNd(Module):
             s += ', padding={padding}'
         if self.dilation != (1,) * len(self.dilation): 
             s += ', dilation_max={dilation} (learnable)'
+        if self.gain != 1.0: 
+            s += ', gain={gain} (an extra multiplicative factor is applied to scaling)'             
         if self.output_padding != (0,) * len(self.output_padding):
             s += ', output_padding={output_padding}'
         if self.groups != 1:
@@ -614,7 +620,8 @@ class Dcls2d(_DclsNd):
         bias: bool = True,
         padding_mode: str = 'zeros',  # TODO: refine this type
         is_swc: bool = False,
-        chunk_size: int = 1024
+        chunk_size: int = 1024,
+        gain: float = 1.0        
     ):            
         kernel_size_ = _pair(kernel_size)
         stride_ = _pair(stride)
@@ -622,16 +629,16 @@ class Dcls2d(_DclsNd):
         dilation_ = _pair(dilation)
         super(Dcls2d, self).__init__(
             in_channels, out_channels, kernel_size_, stride_, padding_, dilation_,
-            False, _pair(0), groups, bias, padding_mode)
+            False, _pair(0), groups, bias, padding_mode, gain)
         self.is_swc = is_swc
         self.chunk_size = chunk_size        
         
     def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor], P1: Tensor, P2: Tensor):
         if self.padding_mode != 'zeros':
             return F.conv2d(F.pad(input, self._reversed_padding_repeated_twice, mode=self.padding_mode),
-                            SD.ConstructKernel2d.apply(weight, P1, P2, self.dilation), bias, self.stride,
+                            SD.ConstructKernel2d.apply(weight, P1, P2, self.dilation, self.gain), bias, self.stride,
                             _pair(0), _pair(1), self.groups)
-        return F.conv2d(input, SD.ConstructKernel2d.apply(weight, P1, P2, self.dilation), bias, self.stride,
+        return F.conv2d(input, SD.ConstructKernel2d.apply(weight, P1, P2, self.dilation, self.gain), bias, self.stride,
                         self.padding, _pair(1), self.groups)
     
     def _conv_forward_swc(self, input: Tensor, weight: Tensor, bias: Optional[Tensor], P1: Tensor, P2: Tensor):
@@ -648,23 +655,8 @@ class Dcls2d(_DclsNd):
             #return self._conv_forward_swc(input, self.weight, self.bias, self.P.select(0,0), self.P.select(0,1))
         else:
             #return self._conv_forward(input, self.weight, self.bias, self.P.select(0,0), self.P.select(0,1))
-            nb_chunks = (self.out_channels-1)//self.chunk_size + 1; 
-
-            chunked_P_h = self.P.select(0,0).chunk(nb_chunks,0);
-            chunked_P_w = self.P.select(0,1).chunk(nb_chunks,0);
-
-            chunked_weights = self.weight.chunk(nb_chunks,0);
-            chunked_biases = self.bias.chunk(nb_chunks,0);            
-            for chunk in range(nb_chunks):
-                P_h_chunk = chunked_P_h[chunk];
-                P_w_chunk = chunked_P_w[chunk];
-                weights_chunk = chunked_weights[chunk];
-                bias_chunk = chunked_biases[chunk];                
-
-                output_chunk = self._conv_forward(input, weights_chunk, bias_chunk, P_h_chunk, P_w_chunk);
-                output = output_chunk if chunk == 0 else torch.cat((output,output_chunk),1)
                 
-            return output
+            return self._conv_forward(input, self.weight, self.bias, self.P.select(0,0), self.P.select(0,1));
     
 
 
