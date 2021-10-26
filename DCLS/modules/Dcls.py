@@ -121,7 +121,7 @@ class _DclsNd(Module):
             fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
             bound = 1 / math.sqrt(fan_in)
             init.uniform_(self.bias, -bound, bound)
-        
+        #init.zeros_(self.P)
         for i in range(len(self.kernel_size)):
             std = (self.dilation[i]/2) / (self.gain * math.sqrt((self.in_channels // self.groups) * self.kernel_size[0] * self.kernel_size[1]))             
             init.normal_(self.P.select(0,i), 0.0, std) 
