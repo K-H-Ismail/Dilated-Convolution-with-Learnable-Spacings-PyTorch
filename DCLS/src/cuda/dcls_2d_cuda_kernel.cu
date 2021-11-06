@@ -260,7 +260,7 @@ std::vector<torch::Tensor> dcls_2d_cuda_backward(
     
     auto chunked_input = input.chunk(nb_chunks,0);
     auto chunked_grad_input = grad_input.chunk(nb_chunks,0);
-    auto chunked_output = grad_output.chunk(nb_chunks,0);    
+    auto chunked_grad_output = grad_output.chunk(nb_chunks,0);    
 
     auto P_h_g_m = P_h.select(0, 0); 
     auto P_w_g_m = P_w.select(0, 0);
@@ -286,7 +286,7 @@ std::vector<torch::Tensor> dcls_2d_cuda_backward(
         const int chunk_size = input_n.size(0);
         
         auto grad_input_n = chunked_grad_input[chunk];
-        auto grad_output_n = chunked_output[chunk];   
+        auto grad_output_n = chunked_grad_output[chunk];   
         auto columns = at::empty({chunk_size, groups * channels_in * kernel_h * kernel_w, height_out * width_out}, input.options());
 
         auto grad_output_g = grad_output_n.view({chunk_size, groups, channels_out/groups, height_out * width_out});
@@ -327,7 +327,7 @@ std::vector<torch::Tensor> dcls_2d_cuda_backward(
 
         // Batch-matrix times vector multiplication is applied to calculate the gradient of the bias,
         // then we sum over chunk size
-        grad_bias +=  at::matmul(grad_output_g, at::ones({height_out * width_out}, input.options())).sum(0).view_as(grad_bias);
+        grad_bias +=  at::matmul(grad_output_g, at::ones({height_out * width_out}, weight.options())).sum(0).view_as(grad_bias);
 
 
     }
@@ -337,7 +337,7 @@ std::vector<torch::Tensor> dcls_2d_cuda_backward(
 
     return {grad_input,
             grad_weight,
-            at::sign(grad_P1 * scaling_h), // apply the scaling
-            at::sign(grad_P2 * scaling_w), // apply the scaling
+            grad_P1 * scaling_h, // apply the scaling
+            grad_P2 * scaling_w, // apply the scaling
             grad_bias};
 }

@@ -120,11 +120,11 @@ torch::Tensor  dcls_construct_2d_cuda_forward(
     auto scaled_P1 = P1 * scaling_h + at::arange(-half_range_h, half_range_h, dilation_h, weight.options())
                                       .repeat({kernel_w,1})
                                       .t()
-                                      .repeat({1,channels_in,1,1})
+                                      .repeat({channels_out,channels_in,1,1})
                                     /*+ ((kernel_h - 1) * dilation_h / 4)*/;
     auto scaled_P2 = P2 * scaling_w + at::arange(-half_range_w, half_range_w, dilation_w, weight.options())
                                       .repeat({kernel_h,1})
-                                      .repeat({1,channels_in,1,1})
+                                      .repeat({channels_out,channels_in,1,1})
                                     /*+ ((kernel_w - 1) * dilation_w / 4)*/;
     
     // Limits of the dilated kernel
@@ -207,11 +207,11 @@ std::vector<torch::Tensor> dcls_construct_2d_cuda_backward(
     auto scaled_P1 = P1 * scaling_h + at::arange(-half_range_h, half_range_h, dilation_h, weight.options())
                                       .repeat({kernel_w,1})
                                       .t()
-                                      .repeat({1,channels_in,1,1})
+                                      .repeat({channels_out,channels_in,1,1})
                                     /*+ ((kernel_h - 1) * dilation_h / 4)*/;
     auto scaled_P2 = P2 * scaling_w + at::arange(-half_range_w, half_range_w, dilation_w, weight.options())
                                       .repeat({kernel_h,1})
-                                      .repeat({1,channels_in,1,1})
+                                      .repeat({channels_out,channels_in,1,1})
                                     /*+ ((kernel_w - 1) * dilation_w / 4)*/;
     
     // Limits of the dilated kernel
