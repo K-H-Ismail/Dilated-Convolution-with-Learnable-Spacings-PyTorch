@@ -43,7 +43,7 @@ class _DclsNd(Module):
 
     __constants__ = ['stride', 'padding', 'dilation', 'groups',
                      'padding_mode', 'output_padding', 'in_channels',
-                     'out_channels', 'kernel_size', 'gain']
+                     'out_channels', 'kernel_size', 'sign_grad', 'gain']
     __annotations__ = {'bias': Optional[torch.Tensor]}
 
     def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor]) -> Tensor:
@@ -61,6 +61,7 @@ class _DclsNd(Module):
     padding_mode: str
     weight: Tensor
     bias: Optional[Tensor]
+    sign_grad: bool
     gain: float        
 
     def __init__(self,
@@ -75,6 +76,7 @@ class _DclsNd(Module):
                  groups: int,
                  bias: bool,
                  padding_mode: str,
+                 sign_grad: bool,                 
                  gain: float) -> None:
         super(_DclsNd, self).__init__()
         if in_channels % groups != 0:
@@ -94,6 +96,7 @@ class _DclsNd(Module):
         self.transposed = transposed
         self.output_padding = output_padding
         self.groups = groups
+        self.sign_grad = sign_grad        
         self.gain = gain
         self.padding_mode = padding_mode
         # `_reversed_padding_repeated_twice` is the padding to be passed to
@@ -123,7 +126,8 @@ class _DclsNd(Module):
             init.uniform_(self.bias, -bound, bound)
         #init.zeros_(self.P)
         for i in range(len(self.kernel_size)):
-            std = (self.dilation[i]/2) / (self.gain * math.sqrt((self.in_channels // self.groups) * self.kernel_size[0] * self.kernel_size[1]))             
+            std = self.dilation[i] / 2 
+            std = std / (self.gain * math.sqrt((self.in_channels // self.groups) * self.kernel_size[0] * self.kernel_size[1]))
             init.normal_(self.P.select(0,i), 0.0, std) 
       
         
@@ -143,6 +147,8 @@ class _DclsNd(Module):
             s += ', groups={groups}'
         if self.bias is None:
             s += ', bias=False'
+        if not self.sign_grad:
+            s += ', sign_grad=False'            
         if self.padding_mode != 'zeros':
             s += ', padding_mode={padding_mode}'
         return s.format(**self.__dict__)
@@ -206,6 +212,7 @@ class Dcls2d(_DclsNd):
         padding_mode (string, optional): ``'zeros'``, ``'reflect'``,
             ``'replicate'`` or ``'circular'``. Default: ``'zeros'``
         dilation (int or tuple, optional): Maximum spacing between kernel elements. Default: 1
+        sign_grad (bool, optional): Return the sign of the gradient for positions. Default: False        
         gain (float, optional): Extra multiplicative factor for scaling. Default: 1.0        
         groups (int, optional): Number of blocked connections from input
             channels to output channels. Default: 1
@@ -270,6 +277,7 @@ class Dcls2d(_DclsNd):
         groups: int = 1,
         bias: bool = True,
         padding_mode: str = 'zeros',  # TODO: refine this type
+        sign_grad: bool = False,        
         gain: float = 1.0
     ):            
         kernel_size_ = _pair(kernel_size)
@@ -278,13 +286,13 @@ class Dcls2d(_DclsNd):
         dilation_ = _pair(dilation)
         super(Dcls2d, self).__init__(
             in_channels, out_channels, kernel_size_, stride_, padding_, dilation_,
-            False, _pair(0), groups, bias, padding_mode, gain)
+            False, _pair(0), groups, bias, padding_mode, sign_grad, gain)
         
     def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor], P1: Tensor, P2: Tensor):
         if self.padding_mode != 'zeros':
             return SD.dcls2d_conv.aply(F.pad(input, self._reversed_padding_repeated_twice, mode=self.padding_mode),
-                            weight, P1, P2, bias, self.stride, _pair(0), self.dilation, self.groups, self.gain)
-        return SD.dcls2d_conv.apply(input, weight, P1, P2, bias, self.stride, self.padding, self.dilation, self.groups, self.gain)
+                            weight, P1, P2, bias, self.stride, _pair(0), self.dilation, self.groups, self.sign_grad, self.gain)
+        return SD.dcls2d_conv.apply(input, weight, P1, P2, bias, self.stride, self.padding, self.dilation, self.groups, self.sign_grad, self.gain)
     def forward(self, input: Tensor) -> Tensor:
         if (self.dilation[0] * self.dilation[1] == 1) :
             return F.conv2d(input, self.weight, self.bias, self.stride, self.padding, _pair(1), self.groups)
