@@ -56,6 +56,11 @@ output = m(input)
 __**Note:**__ using ```Dcls2d``` with a ```dilation``` argument of 1 basically amounts to using ```nn.Conv2d```, therfore DCLS should always be used with a dilation > 1.
 
 ## Construct and Im2col methods
+The constructive DCLS method presents a performance problem when moving to larger dilations (greater than 7). Indeed, the constructed kernel is largely sparse (it has a sparsity of 1 - 1/(d1 * d2)) and the zeros are effectively taken into account during the convolution leading to great losses of performance in time and memory and this all the more as the dilation is large.
+
+This is why we implemented an alternative method by adapting the im2col algorithm  which aims to speed up the convolution by unrolling the input into a Toepliz matrix and then performing matrix multiplication.
+
+You can use both methods by importing the suitable modules as follows:
 
 ```python
 from DCLS.construct.modules.Dcls import  Dcls2d as cDcls2d
@@ -85,6 +90,7 @@ DCLS only supports Nvidia CUDA GPU devices for the moment. The CPU version has n
 -   [ ] CPU
 
 Make sure to have your data and model on CUDA GPU.
+DCLS-im2col doesn't support mixed precision operations for now. By default every tensor is converted to have float32 precision.
 
 ## Publications and Citation
 
