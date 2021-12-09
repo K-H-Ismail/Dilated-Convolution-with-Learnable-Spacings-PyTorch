@@ -21,7 +21,7 @@ DCLS is based on PyTorch and CUDA. Please make sure that you have installed all 
 **Install the last stable version from** [**PyPI**](https://pypi.org/project/DCLS/):
 
 ```bash
-pip install DCLS
+coming soon
 ```
 
 **Install the latest developing version from the source codes**:
