@@ -32,6 +32,11 @@ git clone https://github.com/K-H-Ismail/Dilated-Convolution-with-Learnable-Spaci
 cd Dilated-Convolution-with-Learnable-Spacings-PyTorch
 python ./setup.py install 
 ```
+To prevent bad install directory or ```PYTHONPATH```, please use
+```bash 
+export PYTHONPATH=path/to/your/Python-Ver/lib/pythonVer/site-packages/
+python ./setup.py install --prefix=path/to/your/Python-Ver/
+```
 
 ## Usage
 Dcls methods could be easily used as a substitue of Pytorch's nn.Conv**n**d classical convolution method:
