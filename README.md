@@ -1,5 +1,5 @@
 # Dilated-Convolution-with-Learnable-Spacings-PyTorch
-Ismail Khalfaoui Hassani
+Ismail Khalfaoui Hassani, Thomas Pellegrini and Timothée Masquelier
 
 Dilated Convolution with Learnable Spacings (abbreviated to DCLS) is a novel convolution method based on gradient descent and interpolation. It could be seen as an improvement of the well known dilated convolution that has been widely explored in deep convolutional neural networks and which aims to inflate the convolutional kernel by inserting spaces between the kernel elements. 
 
@@ -13,6 +13,7 @@ For now, the code has only been implemented on [PyTorch](https://pytorch.org/), 
 - [Publications and Citation](#publications-and-citation)
 - [Contribution](#contribution)
 
+The method is described in the arXiv preprint [Dilated Convolution with Learnable Spacings](https://arxiv.org/abs/2112.03740).
 ## Installation
 
 DCLS is based on PyTorch and CUDA. Please make sure that you have installed all the requirements before you install DCLS.
