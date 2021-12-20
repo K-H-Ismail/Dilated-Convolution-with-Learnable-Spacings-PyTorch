@@ -102,13 +102,13 @@ DCLS-im2col doesn't support mixed precision operations for now. By default every
 If you use DCLS in your work, please consider to cite it as follows:
 
 ```
-@misc{Dilated Convolution with Learnable Spacings,
-	title = {Dilated Convolution with Learnable Spacings},
-	author = {Ismail Khalfaoui Hassani},
-	year = {2021},
-	howpublished = {\url{https://github.com/K-H-Ismail/Dilated-Convolution-with-Learnable-Spacings-PyTorch}},
-	note = {Accessed: YYYY-MM-DD},
+@article{khalfaoui2021dilated,
+  title={Dilated convolution with learnable spacings},
+  author={Khalfaoui-Hassani, Ismail and Pellegrini, Thomas and Masquelier, Timoth{\'e}e},
+  journal={arXiv preprint arXiv:2112.03740},
+  year={2021}
 }
+
 ```
 
 ## Contribution
