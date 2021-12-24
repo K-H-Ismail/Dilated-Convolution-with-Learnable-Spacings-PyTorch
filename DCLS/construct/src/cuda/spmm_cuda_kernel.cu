@@ -8,6 +8,10 @@
 #include <cusparse_v2.h>
 #include <cublas_v2.h>
 #include <assert.h>
+
+#include <cuda_runtime_api.h> // cudaMalloc, cudaMemcpy, etc.
+#include <cusparseLt.h>       // cusparseLt header
+
 using namespace std;
 
 #define ERR_NE(X,Y) do { if ((X) != (Y)) { \
@@ -15,6 +19,24 @@ using namespace std;
     exit(-1);}} while(0)
 #define CUDA_CALL(X) ERR_NE((X),cudaSuccess)
 #define CUSPARSE_CALL(X) ERR_NE((X),CUSPARSE_STATUS_SUCCESS)
+
+#define CHECK_CUDA(func)                                                       \
+{                                                                              \
+    cudaError_t status = (func);                                               \
+    if (status != cudaSuccess) {                                               \
+        printf("CUDA API failed at line %d with error: %s (%d)\n",             \
+               __LINE__, cudaGetErrorString(status), status);                  \
+    }                                                                          \
+}
+
+#define CHECK_CUSPARSE(func)                                                   \
+{                                                                              \
+    cusparseStatus_t status = (func);                                          \
+    if (status != CUSPARSE_STATUS_SUCCESS) {                                   \
+        printf("CUSPARSE API failed at line %d with error: %s (%d)\n",         \
+               __LINE__, cusparseGetErrorString(status), status);              \
+    }                                                                          \
+}                                                                              \
 
 template<class T>
 struct reCuBuffer
@@ -178,4 +200,129 @@ void sparse_mm_dense_cusparse_backend(const int & cuda_device_id, const int & m,
 #endif
 
     CUSPARSE_CALL(cusparseDestroy(handle));    
+}
+
+
+void sparse_mm_dense_cusparse_backend_lt(const int & cuda_device_id, const int & m, const int & n, const int & k, float * dA, float * dB, float * dC)
+{
+    int major_cc, minor_cc;
+    CHECK_CUDA( cudaDeviceGetAttribute(&major_cc,
+                                       cudaDevAttrComputeCapabilityMajor, 0) )
+    CHECK_CUDA( cudaDeviceGetAttribute(&minor_cc,
+                                       cudaDevAttrComputeCapabilityMinor, 0) )
+    if (!(major_cc == 8 && minor_cc == 0) &&
+        !(major_cc == 8 && minor_cc == 6)) {
+        std::printf("\ncusparseLt is supported only on GPU devices with"
+                    " compute capability == 8.0, 8.6 current: %d.%d\n\n",
+                     major_cc, minor_cc);
+    }
+    
+    // Host problem definition, row-major order
+    auto          order = CUSPARSE_ORDER_ROW;
+    auto          opA   = CUSPARSE_OPERATION_NON_TRANSPOSE;
+    auto          opB   = CUSPARSE_OPERATION_NON_TRANSPOSE;
+    auto          type  = CUDA_R_32F;
+    auto          compute_type = CUSPARSE_COMPUTE_TF32;
+
+    bool     is_rowmajor    = (order == CUSPARSE_ORDER_ROW);
+    bool     isA_transposed = (opA != CUSPARSE_OPERATION_NON_TRANSPOSE);
+    bool     isB_transposed = (opB != CUSPARSE_OPERATION_NON_TRANSPOSE);
+    auto     num_A_rows     = (isA_transposed) ? k : m;
+    auto     num_A_cols     = (isA_transposed) ? m : k;
+    auto     num_B_rows     = (isB_transposed) ? n : k;
+    auto     num_B_cols     = (isB_transposed) ? k : n;
+    auto     num_C_rows     = m;
+    auto     num_C_cols     = n;
+    unsigned alignment      = 32;
+    auto     lda            = (is_rowmajor) ? num_A_cols : num_A_rows;
+    auto     ldb            = (is_rowmajor) ? num_B_cols : num_B_rows;
+    auto     ldc            = (is_rowmajor) ? num_C_cols : num_C_rows;
+
+
+
+    float alpha = 1.0f;
+    float beta  = 0.0f;    
+    //--------------------------------------------------------------------------
+    // Device memory management
+    float *dD;
+    float *dA_compressed;
+    int    *d_valid;
+
+    CHECK_CUDA( cudaMalloc((void**) &d_valid, sizeof(d_valid)) )
+    dD = dC;
+
+    //--------------------------------------------------------------------------
+    cusparseLtHandle_t             handle;
+    cusparseLtMatDescriptor_t      matA, matB, matC;
+    cusparseLtMatmulDescriptor_t   matmul;
+    cusparseLtMatmulAlgSelection_t alg_sel;
+    cusparseLtMatmulPlan_t         plan;
+    cudaStream_t                   stream = nullptr;
+    CHECK_CUSPARSE( cusparseLtInit(&handle) )
+    // matrix descriptor initialization
+    CHECK_CUSPARSE( cusparseLtStructuredDescriptorInit(
+                                            &handle, &matA, num_A_rows,
+                                            num_A_cols, lda, alignment,
+                                            type, order,
+                                            CUSPARSELT_SPARSITY_50_PERCENT) )
+    CHECK_CUSPARSE( cusparseLtDenseDescriptorInit(
+                                            &handle, &matB, num_B_rows,
+                                            num_B_cols, ldb, alignment,
+                                            type, order) )
+    CHECK_CUSPARSE( cusparseLtDenseDescriptorInit(
+                                            &handle, &matC, num_C_rows,
+                                            num_C_cols, ldc, alignment,
+                                            type, order) )
+    // matmul, algorithm selection, and plan initialization
+    CHECK_CUSPARSE( cusparseLtMatmulDescriptorInit(
+                                            &handle, &matmul, opA, opB,
+                                            &matA, &matB, &matC, &matC,
+                                            compute_type) )
+    CHECK_CUSPARSE( cusparseLtMatmulAlgSelectionInit(
+                                            &handle, &alg_sel, &matmul,
+                                            CUSPARSELT_MATMUL_ALG_DEFAULT) )
+    int alg = 0;
+    CHECK_CUSPARSE( cusparseLtMatmulAlgSetAttribute(
+                                            &handle, &alg_sel,
+                                            CUSPARSELT_MATMUL_ALG_CONFIG_ID,
+                                            &alg, sizeof(alg)))
+    size_t workspace_size, compressed_size;
+    CHECK_CUSPARSE( cusparseLtMatmulGetWorkspace(&handle, &alg_sel,
+                                                 &workspace_size))
+
+    CHECK_CUSPARSE( cusparseLtMatmulPlanInit(&handle, &plan, &matmul, &alg_sel,
+                                             workspace_size) )
+
+    //--------------------------------------------------------------------------
+    // Compress the A matrix
+    CHECK_CUSPARSE( cusparseLtSpMMACompressedSize(&handle, &plan,
+                                                  &compressed_size) )
+    CHECK_CUDA( cudaMalloc((void**) &dA_compressed, compressed_size) )
+
+    CHECK_CUSPARSE( cusparseLtSpMMACompress(&handle, &plan, dA,
+                                            dA_compressed, stream) )
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Perform the matrix multiplication
+    void*         d_workspace = nullptr;
+    int           num_streams = 0;
+    cudaStream_t* streams     = nullptr;
+    CHECK_CUSPARSE( cusparseLtMatmul(&handle, &plan, &alpha, dA_compressed, dB,
+                                     &beta, dC, dD, d_workspace, streams,
+                                     num_streams) )
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // destroy plan and handle
+    CHECK_CUSPARSE( cusparseLtMatDescriptorDestroy(&matA) )
+    CHECK_CUSPARSE( cusparseLtMatDescriptorDestroy(&matB) )
+    CHECK_CUSPARSE( cusparseLtMatDescriptorDestroy(&matC) )
+    CHECK_CUSPARSE( cusparseLtMatmulPlanDestroy(&plan) )
+    CHECK_CUSPARSE( cusparseLtDestroy(&handle) )
+        
+    //--------------------------------------------------------------------------
+    // device memory deallocation
+    /*CHECK_CUDA( cudaFree(dA_compressed) )
+    CHECK_CUDA( cudaFree(dA) )
+    CHECK_CUDA( cudaFree(dB) )
+    CHECK_CUDA( cudaFree(dC) )
+    CHECK_CUDA( cudaFree(d_valid) )  */      
+         
 }

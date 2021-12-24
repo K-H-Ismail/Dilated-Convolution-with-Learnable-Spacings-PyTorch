@@ -8,7 +8,7 @@ from torch.nn.parameter import Parameter
 import torch.nn.functional as F
 import DCLS
 import DCLS.construct.functions.dcls_functionnal as SD
-import DCLS.construct.functions.swc_functionnal as SW
+#import DCLS.construct.functions.swc_functionnal as SW
 from torch.nn import init
 from torch.nn.modules import Module
 from torch.nn.modules.utils import _single, _pair, _triple, _reverse_repeat_tuple
@@ -244,10 +244,16 @@ class _DclsNd(Module):
             fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
             bound = 1 / math.sqrt(fan_in)
             init.uniform_(self.bias, -bound, bound)
-        #init.zeros_(self.P)     
-        for i in range(len(self.kernel_size)):
-            std = (self.dilation[i]/2) / (self.gain * math.sqrt(self.out_channels * (self.in_channels // self.groups) * self.kernel_size[0] * self.kernel_size[1]))             
-            init.normal_(self.P.select(0,i), 0.0, std)     
+        #init.zeros_(self.P)
+        if len(self.kernel_size) == 1:
+            std = self.dilation[0]/2 
+            std = std / (self.gain * math.sqrt((self.in_channels // self.groups) * self.out_channels * self.kernel_size[0]))
+            init.normal_(self.P.select(0,0), 0.0, std)    
+        else:
+            for i in range(len(self.kernel_size)):
+                std = self.dilation[i] / 2 
+                std = std / (self.gain * math.sqrt((self.in_channels // self.groups) * self.out_channels * self.kernel_size[0] * self.kernel_size[1]))
+                init.normal_(self.P.select(0,i), 0.0, std)    
         
         
     def extra_repr(self):
@@ -481,23 +487,24 @@ class Dcls1d(_DclsNd):
         groups: int = 1,
         bias: bool = True,
         padding_mode: str = 'zeros',  # TODO: refine this type
+        gain: float = 1.0  
     ):           
         # we create new variables below to make mypy happy since kernel_size has
         # type Union[int, Tuple[int]] and kernel_size_ has type Tuple[int]
         kernel_size_ = _single(kernel_size)
         stride_ = _single(stride)
-        padding_ = (_size_1_op_t(padding) + _size_1_op_t(dilation) // _size_1_op_t(2)).get()
+        padding_ = _single(padding) 
         dilation_ = _single(dilation)
         super(Dcls1d, self).__init__(
             in_channels, out_channels, kernel_size_, stride_, padding_, dilation_,
-            False, _single(0), groups, bias, padding_mode)
+            False, _single(0), groups, bias, padding_mode, gain)
     
     def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor], P: Tensor):
         if self.padding_mode != 'zeros':
             return F.conv1d(F.pad(input, self._reversed_padding_repeated_twice, mode=self.padding_mode),
-                            SD.ConstructKernel1d.apply(weight, P, self.dilation), bias, self.stride,
+                            SD.ConstructKernel1d.apply(weight, P, self.dilation, self.gain), bias, self.stride,
                             _single(0), _single(1), self.groups)
-        return F.conv1d(input, SD.ConstructKernel1d.apply(weight, P, self.dilation), bias, self.stride,
+        return F.conv1d(input, SD.ConstructKernel1d.apply(weight, P, self.dilation, self.gain), bias, self.stride,
                         self.padding, _single(1), self.groups)
 
     def forward(self, input: Tensor) -> Tensor:
