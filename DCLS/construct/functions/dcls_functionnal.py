@@ -13,15 +13,17 @@ class ConstructKernel(torch.autograd.Function):
 class ConstructKernel1d(ConstructKernel):
     
     @staticmethod 
-    def forward(ctx, weight, P, dilation):
+    def forward(ctx, weight, P, dilation, gain):
         
-        ctx.dilation = dilation        
+        ctx.dilation = dilation
+        ctx.gain = gain                 
         
         ctx.save_for_backward(weight, P)
         
         output = dcls_construct_1d.forward(weight,
                                        P,
-                                       ctx.dilation[0]
+                                       ctx.dilation[0],
+                                       ctx.gain
                                       )
 
         return output
@@ -35,13 +37,14 @@ class ConstructKernel1d(ConstructKernel):
         outputs = dcls_construct_1d.backward(weight, 
                                          P, 
                                          grad_output.contiguous(),
-                                         ctx.dilation[0]
+                                         ctx.dilation[0],
+                                         ctx.gain
                                         )
         
         grad_weight, grad_P = outputs
 
 
-        return grad_weight, grad_P, None
+        return grad_weight, grad_P, None, None
     
 class ConstructKernel2d(ConstructKernel):
     

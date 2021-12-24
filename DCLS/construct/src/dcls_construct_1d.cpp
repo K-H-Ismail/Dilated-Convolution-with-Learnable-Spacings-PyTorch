@@ -9,14 +9,16 @@
 torch::Tensor dcls_construct_1d_cuda_forward(   
     torch::Tensor weight,
     torch::Tensor P,
-    const int dilation
+    const int dilation,
+    const float gain
     ); 
 
 std::vector<torch::Tensor> dcls_construct_1d_cuda_backward(   
     torch::Tensor weight,
     torch::Tensor P,
     torch::Tensor grad_output,      
-    const int dilation
+    const int dilation,
+    const float gain
     ); 
     
 // C++ interface
@@ -28,7 +30,8 @@ std::vector<torch::Tensor> dcls_construct_1d_cuda_backward(
 torch::Tensor dcls_construct_1d_forward(   
     torch::Tensor weight,
     torch::Tensor P,
-    const int dilation
+    const int dilation,
+    const float gain
     ) {
   
     CHECK_INPUT(weight);
@@ -38,7 +41,8 @@ torch::Tensor dcls_construct_1d_forward(
     return dcls_construct_1d_cuda_forward(
                               weight, 
                               P,
-                              dilation
+                              dilation,
+                              gain
                               ); 
 }
 
@@ -46,7 +50,8 @@ std::vector<torch::Tensor> dcls_construct_1d_backward(
     torch::Tensor weight,
     torch::Tensor P,
     torch::Tensor grad_output,      
-    const int dilation
+    const int dilation,
+    const float gain
     ) {
       
     CHECK_INPUT(weight);
@@ -57,7 +62,8 @@ std::vector<torch::Tensor> dcls_construct_1d_backward(
                               weight, 
                               P,
                               grad_output,
-                              dilation
+                              dilation,
+                              gain
                               ); 
 }
 
