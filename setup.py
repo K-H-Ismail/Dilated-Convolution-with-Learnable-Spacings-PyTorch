@@ -32,9 +32,9 @@ def get_extensions():
                 'im2col_dcls_2d']    
     if not sys.platform == 'win32':
         # win32 does not support cuSparse
-        ext_list_construct.extend(['spmm', 
-                         'sparse_weight_conv'])
-    
+        #ext_list_construct.extend(['spmm', 
+        #                 'sparse_weight_conv'])
+        pass
     extra_compile_args = {'cxx': ['-g'], 'nvcc': ['-use_fast_math']}
     
     extension = CUDAExtension
@@ -45,7 +45,7 @@ def get_extensions():
             glob.glob(os.path.join(extensions_dir_construct, ext_name + '.cpp')) + glob.glob(os.path.join(extensions_dir_construct, 'cuda', ext_name + '_cuda_kernel.cu')),
             define_macros=define_macros,
             extra_compile_args=extra_compile_args,
-            libraries=[ 'cusparse']            
+            libraries=[ 'cusparse', 'cusparseLt']            
         ) for ext_name in ext_list_construct])
     
     ext_modules.extend( list([
@@ -54,7 +54,7 @@ def get_extensions():
             glob.glob(os.path.join(extensions_dir, ext_name + '.cpp')) + glob.glob(os.path.join(extensions_dir, 'cuda', ext_name + '_cuda_kernel.cu')),
             define_macros=define_macros,
             extra_compile_args=extra_compile_args,
-            libraries=[ 'cusparse']            
+            libraries=[ 'cusparse', 'cusparseLt']            
         ) for ext_name in ext_list]))    
 
 
