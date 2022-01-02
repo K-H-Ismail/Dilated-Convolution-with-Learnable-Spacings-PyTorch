@@ -45,7 +45,7 @@ def get_extensions():
             glob.glob(os.path.join(extensions_dir_construct, ext_name + '.cpp')) + glob.glob(os.path.join(extensions_dir_construct, 'cuda', ext_name + '_cuda_kernel.cu')),
             define_macros=define_macros,
             extra_compile_args=extra_compile_args,
-            libraries=[ 'cusparse', 'cusparseLt']            
+            #libraries=[ 'cusparse', 'cusparseLt']            
         ) for ext_name in ext_list_construct])
     
     ext_modules.extend( list([
@@ -54,7 +54,7 @@ def get_extensions():
             glob.glob(os.path.join(extensions_dir, ext_name + '.cpp')) + glob.glob(os.path.join(extensions_dir, 'cuda', ext_name + '_cuda_kernel.cu')),
             define_macros=define_macros,
             extra_compile_args=extra_compile_args,
-            libraries=[ 'cusparse', 'cusparseLt']            
+            #libraries=[ 'cusparse', 'cusparseLt']            
         ) for ext_name in ext_list]))    
 
 
