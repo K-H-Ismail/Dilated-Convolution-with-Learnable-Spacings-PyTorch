@@ -69,7 +69,11 @@ class dcls2d_conv(torch.autograd.Function):
                                    ctx.groups,
                                    ctx.gain 
                                   )
-        grad_input, grad_weight, grad_P1, grad_P2, grad_bias = outputs        
+        grad_input, grad_weight, grad_P1, grad_P2, grad_bias = outputs
+        
+        if bias is None:
+            grad_bias = None
+            
         if ctx.sign_grad :
             grad_P1 = grad_P1.sign()
             grad_P2 = grad_P2.sign()            

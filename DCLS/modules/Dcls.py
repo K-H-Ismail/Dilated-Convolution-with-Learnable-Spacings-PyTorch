@@ -110,11 +110,12 @@ class _DclsNd(Module):
         else:
             self.weight = Parameter(torch.Tensor(
                 out_channels, in_channels // groups, *kernel_size))
+        
         if bias:
-            self.bias = Parameter(torch.Tensor(out_channels))
+            self.bias = Parameter(torch.empty(out_channels))
         else:
-            self.bias = Parameter(torch.Tensor(out_channels))            
-            #self.register_parameter('bias', None)
+            self.register_parameter('bias', None)
+
         self.P = Parameter(torch.Tensor(len(kernel_size),in_channels // groups, *kernel_size))          
         self.reset_parameters()
 

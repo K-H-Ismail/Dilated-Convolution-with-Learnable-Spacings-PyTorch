@@ -185,7 +185,8 @@ torch::Tensor  im2col_dcls_2d_batch_cuda(
 
 torch::Tensor  mm_dcls_2d_forward(
     torch::Tensor im,
-    torch::Tensor weights,    
+    torch::Tensor weights, 
+    torch::Tensor bias,    
     torch::Tensor P_h, torch::Tensor P_w,     
     const int dilation_h, const int dilation_w, 
     const int padding_h, const int padding_w,
@@ -211,6 +212,9 @@ torch::Tensor  mm_dcls_2d_forward(
     // Apply matrix-matrix multiplication
     output = at::matmul(weights.view({groups, channels_out, 4 * channels_in * kernel_h * kernel_w}), 
                         columns.view({batch_size, groups, 4 * channels_in * kernel_h * kernel_w, height_out * width_out}));
+    
+    // Add bias
+    output = (output.permute({0,3,1,2}) + bias).permute({0,2,3,1});    
 
     return output; 
 }

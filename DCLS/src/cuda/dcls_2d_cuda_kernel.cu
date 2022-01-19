@@ -16,7 +16,7 @@ torch::Tensor  dcls_2d_cuda_forward(
     torch::Tensor weight,
     torch::Tensor P1,
     torch::Tensor P2,
-    torch::Tensor bias,
+    c10::optional<torch::Tensor> bias,
     const int dilation_h, const int dilation_w, 
     const int stride_h, const int stride_w, 
     const int padding_h, const int padding_w, 
@@ -90,7 +90,9 @@ torch::Tensor  dcls_2d_cuda_forward(
     auto rwW = rest_w * weight;
     auto rhwW = rest_h * rwW;    
     
-    auto bias_g = bias.view({groups, channels_out/groups});
+
+    auto bias_g = bias.has_value() ? bias.value().view({groups, channels_out/groups}) : 
+                                     torch::zeros({groups, channels_out/groups}, weight.options());
     auto W1 = (weight - rhW - rwW + rhwW).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
     auto W2 = (rhW - rhwW).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
     auto W3 = (rwW - rhwW).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
@@ -123,7 +125,7 @@ torch::Tensor  dcls_2d_cuda_forward(
         auto output_g = at::zeros({chunk_size, groups, channels_out/groups, height_out * width_out}, input.options());
         
         // Call im2col_dcls + matmul
-        auto output_m =  mm_dcls_2d_forward(input_g, weights_gm, P_h_g_m, P_w_g_m, 
+        auto output_m =  mm_dcls_2d_forward(input_g, weights_gm, bias_g, P_h_g_m, P_w_g_m, 
                                          dilation_h, dilation_w, padding_h, padding_w, 
                                          stride_h, stride_w, height_out, width_out);
             
@@ -146,7 +148,7 @@ std::vector<torch::Tensor> dcls_2d_cuda_backward(
     torch::Tensor P1,
     torch::Tensor P2,
     torch::Tensor grad_output,      
-    torch::Tensor bias,
+    c10::optional<torch::Tensor> bias,
     const int dilation_h, const int dilation_w, 
     const int stride_h, const int stride_w, 
     const int padding_h, const int padding_w, 
@@ -159,12 +161,13 @@ std::vector<torch::Tensor> dcls_2d_cuda_backward(
         is_batch = false;
         input = input.unsqueeze(0);
     }
-    
+
     auto grad_input = torch::zeros_like(input);      
     auto grad_weight = torch::zeros_like(weight);
     auto grad_P1 = torch::zeros_like(P1);
     auto grad_P2 = torch::zeros_like(P2);    
-    auto grad_bias = torch::zeros_like(bias);
+    auto grad_bias = bias.has_value() ? torch::zeros_like(bias.value()): 
+                                        torch::zeros({weight.size(0)}, weight.options());
        
     // Unsqueeze P1 and P2 for element-wise matrix multiplication compatibility    
     P1 = P1.unsqueeze(0);
@@ -230,7 +233,7 @@ std::vector<torch::Tensor> dcls_2d_cuda_backward(
     auto rhw = rest_h * rest_w;   
    
     // Calculate interpolations and make groups for separable conv 
-    auto grad_bias_g = bias.view({groups, channels_out/groups});
+    auto grad_bias_g = grad_bias.view({groups, channels_out/groups});
     auto weight_g = weight.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});     
     auto grad_weight_g = grad_weight.view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});    
     auto ones = at::ones_like(weight, weight.options()).view({groups, channels_out/groups, channels_in, kernel_h, kernel_w});
