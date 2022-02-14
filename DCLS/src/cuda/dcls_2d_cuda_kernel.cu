@@ -122,7 +122,6 @@ torch::Tensor  dcls_2d_cuda_forward(
         const int chunk_size = input_n.size(0);
 
         auto input_g = input_n.view({chunk_size, groups, channels_in, height, width});       
-        auto output_g = at::zeros({chunk_size, groups, channels_out/groups, height_out * width_out}, input.options());
         
         // Call im2col_dcls + matmul
         auto output_m =  mm_dcls_2d_forward(input_g, weights_gm, bias_g, P_h_g_m, P_w_g_m, 

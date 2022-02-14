@@ -39,7 +39,7 @@ class dcls2d_conv(torch.autograd.Function):
         
         ctx.save_for_backward(input, weight, P1, P2, bias)
         
-        output = dcls_2d.forward(input,
+        output = dcls_2d.forward(input.float(),
                                  weight, 
                                  P1, 
                                  P2, 
@@ -57,7 +57,7 @@ class dcls2d_conv(torch.autograd.Function):
     @staticmethod   
     def backward(ctx, grad_output):        
         input, weight, P1, P2, bias = ctx.saved_tensors
-        outputs = dcls_2d.backward(input,
+        outputs = dcls_2d.backward(input.float(),
                                    weight, 
                                    P1, 
                                    P2, 
