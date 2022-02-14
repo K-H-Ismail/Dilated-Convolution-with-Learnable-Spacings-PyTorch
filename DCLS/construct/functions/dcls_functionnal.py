@@ -4,7 +4,8 @@ from torch.autograd.function import once_differentiable
 import torch.nn.functional as F
 import sys
 import os
-
+global eps 
+eps = torch.finfo(torch.float32).eps
 import dcls_construct_1d, dcls_construct_2d, dcls_construct_3d, dcls_construct_2_1d, dcls_construct_3_1d, dcls_construct_3_2d
 
 class ConstructKernel(torch.autograd.Function):
@@ -49,17 +50,18 @@ class ConstructKernel1d(ConstructKernel):
 class ConstructKernel2d(ConstructKernel):
     
     @staticmethod 
-    def forward(ctx, weight, P1, P2, dilation, gain):
+    def forward(ctx, weight, P1, P2, dilated_kernel_size, gain):
         
-        ctx.dilation = dilation     
-        ctx.gain = gain        
+        ctx.dilated_kernel_size = dilated_kernel_size     
+        ctx.gain = gain
+
         
         ctx.save_for_backward(weight, P1, P2)
         
         output = dcls_construct_2d.forward(weight,
                                        P1, 
                                        P2, 
-                                       ctx.dilation[0], ctx.dilation[1],
+                                       ctx.dilated_kernel_size[0], ctx.dilated_kernel_size[1],
                                        ctx.gain
                                       )
 
@@ -75,7 +77,7 @@ class ConstructKernel2d(ConstructKernel):
                                          P1, 
                                          P2, 
                                          grad_output.contiguous(),
-                                         ctx.dilation[0], ctx.dilation[1],
+                                         ctx.dilated_kernel_size[0], ctx.dilated_kernel_size[1],
                                          ctx.gain
                                    )
         

@@ -10,7 +10,7 @@ torch::Tensor dcls_construct_2d_cuda_forward(
     torch::Tensor weight,
     torch::Tensor P1,
     torch::Tensor P2,
-    const int dilation_h, const int dilation_w,
+    const int dilated_kernel_size_h, const int dilated_kernel_size_w,
     const float gain
     ); 
 
@@ -19,7 +19,7 @@ std::vector<torch::Tensor> dcls_construct_2d_cuda_backward(
     torch::Tensor P1,
     torch::Tensor P2,
     torch::Tensor grad_output,      
-    const int dilation_h, const int dilation_w,
+    const int dilated_kernel_size_h, const int dilated_kernel_size_w,
     const float gain
     ); 
     
@@ -33,7 +33,7 @@ torch::Tensor dcls_construct_2d_forward(
     torch::Tensor weight,
     torch::Tensor P1,
     torch::Tensor P2,
-    const int dilation_h, const int dilation_w,
+    const int dilated_kernel_size_h, const int dilated_kernel_size_w,
     const float gain
     ) {
   
@@ -46,7 +46,7 @@ torch::Tensor dcls_construct_2d_forward(
                               weight, 
                               P1, 
                               P2,
-                              dilation_h, dilation_w,
+                              dilated_kernel_size_h, dilated_kernel_size_w,
                               gain
                               ); 
 }
@@ -56,7 +56,7 @@ std::vector<torch::Tensor> dcls_construct_2d_backward(
     torch::Tensor P1,
     torch::Tensor P2,
     torch::Tensor grad_output,      
-    const int dilation_h, const int dilation_w,
+    const int dilated_kernel_size_h, const int dilated_kernel_size_w,
     const float gain
     ) {
       
@@ -70,7 +70,7 @@ std::vector<torch::Tensor> dcls_construct_2d_backward(
                               P1, 
                               P2,
                               grad_output,
-                              dilation_h, dilation_w,
+                              dilated_kernel_size_h, dilated_kernel_size_w,
                               gain
                               ); 
 }
