@@ -78,7 +78,8 @@ __global__ void interpolation_grad_kernel(
 torch::Tensor  dcls_construct_3_1d_cuda_forward(  
     torch::Tensor weight,
     torch::Tensor P1,
-    const int dilation_d   
+    const int dilation_d,
+    const float gain   
     ) {
     
     const int channels_out = weight.size(0);
@@ -87,29 +88,35 @@ torch::Tensor  dcls_construct_3_1d_cuda_forward(
     const int kernel_h = weight.size(3);
     const int kernel_w = weight.size(4);    
  
-    const int half_range_bot = dilation_d*kernel_d/2;
+    const int half_range_d = (dilation_d * kernel_d) / 2;
     
     // Suitable for Kaiming uniform initialization
-    auto scaling = sqrt(kernel_d * kernel_h * kernel_w * channels_in * dilation_d * dilation_d / 4);     
+    auto scaling = gain * sqrt(kernel_d * kernel_h * kernel_w * channels_in * channels_out);     
 
-    auto scaled_P1 = P1*scaling + at::arange(-half_range_bot + dilation_d/2,half_range_bot,dilation_d, weight.options())
+    auto scaled_P1 = P1*scaling /*+ at::arange(-half_range_bot + dilation_d/2,half_range_bot,dilation_d, weight.options())
                             .repeat({kernel_h,kernel_w,1})
                             .permute({2,0,1})
-                            .repeat({channels_out,channels_in,1,1,1});
+                            .repeat({channels_out,channels_in,1,1,1})*/;
                             
-    auto P = scaled_P1.floor();
-    auto rest = scaled_P1 - P1;
+    // Add d.k/2, positions are now uniformly around 0 and d.k - 1    
+    auto P_d = scaled_P1 + half_range_d;
     
-    const int depth_out = dilation_d * kernel_d + (dilation_d+1)%2;
+    // Apply floor function, positions are now integers uniformly around 0 and d.k - 1
+    P_d = P_d.floor();
     
-    P += dilation_d*kernel_d/2 ;
-    P = P.clamp(0,depth_out-1);
-
-    auto W2 = rest * weight;     
-    auto W1 = weight - W2;
- 
+    // Apply clamp function, positions are now integers strictly between 0 and d.k - 1
+    P_d = P_d.clamp(0, dilation_d * kernel_d - 1); 
+    
+    
+    // Calculate rests for interpolation
+    auto rest_d = (scaled_P1 + half_range_d).clamp(0, dilation_d * kernel_d - 1) - P_d;     
+    
+    const int depth_out = dilation_d * kernel_d;
     const int height_out = kernel_h;
     const int width_out = kernel_w;
+    
+    auto W2 = rest_d * weight;     
+    auto W1 = weight - W2;    
    
     auto output = torch::zeros({channels_out, channels_in, depth_out, height_out, width_out}, weight.options());
     
@@ -118,7 +125,7 @@ torch::Tensor  dcls_construct_3_1d_cuda_forward(
           
         interpolation_kernel<scalar_t><<<GET_BLOCKS(num_kernels), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
                                      num_kernels,
-                                     P.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+                                     P_d.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
                                      W1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
                                      W2.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
                                      channels_out, channels_in,
@@ -133,7 +140,8 @@ std::vector<torch::Tensor> dcls_construct_3_1d_cuda_backward(
     torch::Tensor weight,
     torch::Tensor P1,
     torch::Tensor grad_output,      
-    const int dilation_d
+    const int dilation_d,
+    const float gain
     ) {
     
     auto grad_weight = torch::zeros_like(weight);
@@ -145,33 +153,43 @@ std::vector<torch::Tensor> dcls_construct_3_1d_cuda_backward(
     const int kernel_h = weight.size(3);
     const int kernel_w = weight.size(4);
     
-    const int half_range_bot = dilation_d*kernel_d/2;
-    const int half_range_top = half_range_bot - (dilation_d*kernel_d + 1)%2;
+    const int half_range_d = (dilation_d * kernel_d) / 2;
     
     // Suitable for Kaiming uniform initialization
-    auto scaling = sqrt(kernel_d * kernel_h * kernel_w * channels_in * dilation_d * dilation_d / 4);     
+    auto scaling = gain * sqrt(kernel_d * kernel_h * kernel_w * channels_in * channels_out);     
     
-    auto scaled_P1 = P1*scaling + at::arange(-half_range_bot + dilation_d/2,half_range_bot,dilation_d, weight.options())
+    auto scaled_P1 = P1*scaling /*+ at::arange(-half_range_bot + dilation_d/2,half_range_bot,dilation_d, weight.options())
                             .repeat({kernel_h,kernel_w,1})
                             .permute({2,0,1})
-                            .repeat({channels_out,channels_in,1,1,1});
+                            .repeat({channels_out,channels_in,1,1,1})*/;
                             
-    auto P = scaled_P1.floor();
-    auto rest = scaled_P1 - P1;
+    // Add d.k/2, positions are now uniformly around 0 and d.k - 1    
+    auto P_d = scaled_P1 + half_range_d;
     
-    const int depth_out = dilation_d * kernel_d + (dilation_d+1)%2;
+    // Apply floor function, positions are now integers uniformly around 0 and d.k - 1
+    P_d = P_d.floor();
     
-    P += dilation_d*kernel_d/2 ;
-    P = P.clamp(0,depth_out-1);  
+    // Apply clamp function, positions are now integers strictly between 0 and d.k - 1
+    P_d = P_d.clamp(0, dilation_d * kernel_d - 1); 
     
-    auto sigma = 0.5*at::ones_like(rest, weight.options());
-    auto ones = at::ones_like(rest, weight.options());   
     
-    auto W2 = rest;     
-    auto W1 = ones - W2;      
+    // Calculate $s for interpolation
     
-    auto W1_P = d_floor(scaled_P1, sigma, half_range_bot, half_range_top, d_zero()) * weight - weight;
-    auto W2_P = - W1_P;
+    const int depth_out = dilation_d;
+        
+    // Calculate rests for interpolation
+    
+    auto rest_d = scaled_P1 + half_range_d;
+    auto mask_d = rest_d.ge(0) * rest_d.le(depth_out-1);
+    rest_d = rest_d.clamp(0,depth_out-1) - P_d;  
+    
+         
+    auto W2 = rest_d * weight;     
+    auto W1 = weight - W2;    
+    
+    auto W1_P = weight * mask_d;
+    auto W2_P = -W1_P;
+
 
     const int num_kernels =  channels_out * channels_in * kernel_d * kernel_h * kernel_w;    
     AT_DISPATCH_FLOATING_TYPES(weight.type(), "dcls_construct_3_1d_backward_cuda", [&] {
@@ -179,7 +197,7 @@ std::vector<torch::Tensor> dcls_construct_3_1d_cuda_backward(
         interpolation_grad_kernel<scalar_t><<<GET_BLOCKS(num_kernels), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
                                      num_kernels,
                                      grad_output.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-                                     P.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+                                     P_d.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
                                      W1.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
                                      W2.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
                                      channels_out, channels_in,
@@ -189,7 +207,7 @@ std::vector<torch::Tensor> dcls_construct_3_1d_cuda_backward(
         interpolation_grad_kernel<scalar_t><<<GET_BLOCKS(num_kernels), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
                                      num_kernels,
                                      grad_output.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-                                     P.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
+                                     P_d.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
                                      W1_P.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
                                      W2_P.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
                                      channels_out, channels_in,
