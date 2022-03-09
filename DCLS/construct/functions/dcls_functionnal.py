@@ -156,15 +156,17 @@ class ConstructKernel2_1d(ConstructKernel):
 class ConstructKernel3_1d(ConstructKernel):
     
     @staticmethod 
-    def forward(ctx, weight, P, dilation):
+    def forward(ctx, weight, P, dilation, gain):
         
-        ctx.dilation = dilation        
+        ctx.dilation = dilation
+        ctx.gain        
         
         ctx.save_for_backward(weight, P)
         
         output = dcls_construct_3_1d.forward(weight,
                                        P,
-                                       ctx.dilation[0]
+                                       ctx.dilation[0],
+                                       ctx.gain
                                       )
         return output
 
@@ -176,7 +178,8 @@ class ConstructKernel3_1d(ConstructKernel):
         outputs = dcls_construct_3_1d.backward(weight, 
                                          P, 
                                          grad_output.contiguous(),
-                                         ctx.dilation[0]
+                                         ctx.dilation[0],
+                                         ctx.gain
                                         )
         
         grad_weight, grad_P = outputs
