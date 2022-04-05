@@ -33,16 +33,17 @@ __global__ void interpolation_kernel(
     int p_w = P_w[channel_out][channel_in][k];
     int p_h_next = p_h + 1;
     int p_w_next = p_w + 1;      
-       
+      
     if(p_h >= 0 & p_h < height_out & p_w >= 0 & p_w < width_out)
     {   
-        interpolated_weight[channel_out][channel_in][p_h][p_w] +=  W1[channel_out][channel_in][k];
+        //interpolated_weight[channel_out][channel_in][p_h][p_w] +=  W1[channel_out][channel_in][k];
+        atomicAdd(&interpolated_weight[channel_out][channel_in][p_h][p_w], W1[channel_out][channel_in][k]);
         if(p_h_next < height_out) 
-            interpolated_weight[channel_out][channel_in][p_h_next][p_w] += W2[channel_out][channel_in][k];
+            atomicAdd(&interpolated_weight[channel_out][channel_in][p_h_next][p_w], W2[channel_out][channel_in][k]);
         if(p_w_next < width_out) 
-            interpolated_weight[channel_out][channel_in][p_h][p_w_next] += W3[channel_out][channel_in][k];
+            atomicAdd(&interpolated_weight[channel_out][channel_in][p_h][p_w_next], W3[channel_out][channel_in][k]);
         if(p_h_next < height_out & p_w_next < width_out) 
-            interpolated_weight[channel_out][channel_in][p_h_next][p_w_next] += W4[channel_out][channel_in][k];
+            atomicAdd(&interpolated_weight[channel_out][channel_in][p_h_next][p_w_next], W4[channel_out][channel_in][k]);
     }
       
   }
@@ -71,26 +72,25 @@ __global__ void interpolation_grad_kernel(
     int p_h = P_h[channel_out][channel_in][k];
     int p_w = P_w[channel_out][channel_in][k];
     int p_h_next = p_h + 1;
-    int p_w_next = p_w + 1;       
+    int p_w_next = p_w + 1;        
 
     if(p_h >= 0 & p_h < height_out & p_w >= 0 & p_w < width_out)
-    {     
-        interpolated_weight[channel_out][channel_in][k] += 
-            grad_output[channel_out][channel_in][p_h][p_w] * W1[channel_out][channel_in][k];
+    {   
+        atomicAdd(&interpolated_weight[channel_out][channel_in][k],
+                  grad_output[channel_out][channel_in][p_h][p_w] * W1[channel_out][channel_in][k]);  
 
         if(p_h_next < height_out)
-            interpolated_weight[channel_out][channel_in][k] +=        
-            grad_output[channel_out][channel_in][p_h_next][p_w] * W2[channel_out][channel_in][k];
+            atomicAdd(&interpolated_weight[channel_out][channel_in][k],
+                      grad_output[channel_out][channel_in][p_h_next][p_w] * W2[channel_out][channel_in][k]);
 
         if(p_w_next < width_out)
-            interpolated_weight[channel_out][channel_in][k] +=        
-            grad_output[channel_out][channel_in][p_h][p_w_next] * W3[channel_out][channel_in][k];
+            atomicAdd(&interpolated_weight[channel_out][channel_in][k],
+                      grad_output[channel_out][channel_in][p_h][p_w_next] * W3[channel_out][channel_in][k]);
 
         if(p_h_next < height_out & p_w_next < width_out)
-            interpolated_weight[channel_out][channel_in][k] += 
-            grad_output[channel_out][channel_in][p_h_next][p_w_next] * W4[channel_out][channel_in][k];
-    }
-      
+            atomicAdd(&interpolated_weight[channel_out][channel_in][k],
+                      grad_output[channel_out][channel_in][p_h_next][p_w_next] * W4[channel_out][channel_in][k]);
+    }     
   }
 }
 
@@ -294,7 +294,7 @@ std::vector<torch::Tensor> dcls_construct_2d_cuda_backward(
                                      channels_out, channels_in,
                                      kernel, 
                                      dilated_kernel_size_h, dilated_kernel_size_w,                                 
-                                     grad_P2.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>()); 
+                                     grad_P2.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>());
         
     });
 
