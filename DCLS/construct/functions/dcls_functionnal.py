@@ -50,10 +50,10 @@ class ConstructKernel1d(ConstructKernel):
 class ConstructKernel2d(ConstructKernel):
     
     @staticmethod 
-    def forward(ctx, weight, P1, P2, dilated_kernel_size, gain):
+    def forward(ctx, weight, P1, P2, dilated_kernel_size, scaling):
         
         ctx.dilated_kernel_size = dilated_kernel_size     
-        ctx.gain = gain
+        ctx.scaling = scaling
 
         
         ctx.save_for_backward(weight, P1, P2)
@@ -62,7 +62,7 @@ class ConstructKernel2d(ConstructKernel):
                                        P1, 
                                        P2, 
                                        ctx.dilated_kernel_size[0], ctx.dilated_kernel_size[1],
-                                       ctx.gain
+                                       ctx.scaling
                                       )
 
         return output
@@ -78,7 +78,7 @@ class ConstructKernel2d(ConstructKernel):
                                          P2, 
                                          grad_output.contiguous(),
                                          ctx.dilated_kernel_size[0], ctx.dilated_kernel_size[1],
-                                         ctx.gain
+                                         ctx.scaling
                                    )
         
         grad_weight, grad_P1, grad_P2 = outputs
