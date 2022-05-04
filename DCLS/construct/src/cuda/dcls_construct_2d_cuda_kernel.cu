@@ -11,6 +11,11 @@
 #include <math.h>
 #include <vector>
 
+#if !defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 600
+#else
+__device__ double atomicAdd(double* a, double b) { return b; }
+#endif
+
 template <typename scalar_t>
 __global__ void interpolation_kernel(
     const int n,
