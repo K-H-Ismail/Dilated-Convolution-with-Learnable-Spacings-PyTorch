@@ -99,16 +99,13 @@ torch::Tensor  dcls_construct_2d_cuda_forward(
     torch::Tensor P1,
     torch::Tensor P2,
     const int dilated_kernel_size_h, const int dilated_kernel_size_w,
-    const float gain
+    const float scaling
     ) {
     
     const int channels_out = weight.size(0);
     const int channels_in = weight.size(1);    
     const int kernel = weight.size(2);
 
-    
-    // Suitable scaling for Kaiming uniform initialization
-    auto scaling = gain * sqrt(kernel * channels_in * channels_out);
      
     // Bounds for Ph and Pw
     const int half_range_h = dilated_kernel_size_h / 2;
@@ -176,7 +173,7 @@ std::vector<torch::Tensor> dcls_construct_2d_cuda_backward(
     torch::Tensor P2,
     torch::Tensor grad_output,      
     const int dilated_kernel_size_h, const int dilated_kernel_size_w,
-    const float gain
+    const float scaling
     ) {
     
     auto grad_weight = torch::zeros_like(weight);
@@ -186,10 +183,6 @@ std::vector<torch::Tensor> dcls_construct_2d_cuda_backward(
     const int channels_out = weight.size(0);
     const int channels_in = weight.size(1);    
     const int kernel = weight.size(2);
-    
-    
-    // Suitable scaling for Kaiming uniform initialization
-    auto scaling = gain * sqrt(kernel * channels_in * channels_out);
  
      
     // Bounds for Ph and Pw
@@ -223,17 +216,16 @@ std::vector<torch::Tensor> dcls_construct_2d_cuda_backward(
     // Calculate rests for interpolation
     
     auto rest_h = scaled_P1 + half_range_h;
-    auto mask_h = rest_h.ge(0) * rest_h.le(dilated_kernel_size_h-1);
+    auto mask_h = rest_h.gt(0) * rest_h.lt(dilated_kernel_size_h-1);
     rest_h = rest_h.clamp(0,dilated_kernel_size_h-1) - P_h; 
     auto rest_w = scaled_P2 + half_range_w;
-    auto mask_w = rest_w.ge(0) * rest_w.le(dilated_kernel_size_w-1);
+    auto mask_w = rest_w.gt(0) * rest_w.lt(dilated_kernel_size_w-1);
     rest_w = rest_w.clamp(0,dilated_kernel_size_w-1) - P_w;    
     
 
-    auto rhW = rest_h * weight * mask_w;
-    auto rwW = rest_w * weight * mask_h;
+    auto rhW = rest_h * weight * mask_h;
+    auto rwW = rest_w * weight * mask_w;
     auto rhw = rest_h * rest_w;
-    auto rhwW = rhw * weight;    
     
     auto ones = at::ones_like(rest_h, weight.options());
         
