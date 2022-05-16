@@ -16,6 +16,19 @@ from torch.nn.common_types import _size_1_t, _size_2_t, _size_3_t
 from typing import Optional, List, Tuple
 import operator
 import functools
+try:
+    from depthwise_conv2d_implicit_gemm import _DepthWiseConv2dImplicitGEMMFP32, _DepthWiseConv2dImplicitGEMMFP16            
+except ImportError as error:
+    # Output expected ImportErrors.
+    Logging.log_exception(error)
+    # Include the name and path attributes in output.
+    Logging.log(f'error.name: {error.name}')
+    Logging.log(f'error.path: {error.path}')
+    Logging.log('switching to native conv2d')
+except Exception as exception:
+    # Output unexpected Exceptions.
+    Logging.log_exception(exception, False)
+    Logging.log('switching to native conv2d')
 
 # overloading + and // operators for Union(int,Tuple[int,...])
 class _size_1_op_t:
@@ -647,20 +660,32 @@ class Dcls2d(_DclsNd):
         dilated_kernel_size_ = _pair(dilated_kernel_size)
         super(Dcls2d, self).__init__(
             in_channels, out_channels, kernel_count, stride_, padding_, dilated_kernel_size_,
-            False, _pair(0), groups, bias, padding_mode, scaling)       
+            False, _pair(0), groups, bias, padding_mode, scaling)
         
     def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor], P1: Tensor, P2: Tensor):
-        if self.padding_mode != 'zeros':
-            return F.conv2d(F.pad(input, self._reversed_padding_repeated_twice, mode=self.padding_mode),
-                            SD.ConstructKernel2d.apply(weight, P1, P2, self.dilated_kernel_size, self.scaling), bias, self.stride,
-                            _pair(0), _pair(1), self.groups)
-        return F.conv2d(input, SD.ConstructKernel2d.apply(weight, P1, P2, self.dilated_kernel_size, self.scaling), bias, self.stride, self.padding, _pair(1), self.groups)
+        if self.in_channels == self.out_channels == self.groups and False and self.padding[0] ==  self.dilated_kernel_size[0] // 2:
+            if input.dtype == torch.float32:
+                x = _DepthWiseConv2dImplicitGEMMFP32.apply(input, SD.ConstructKernel2d.apply(weight, P1, P2, self.dilated_kernel_size, self.scaling))
+            elif x.dtype == torch.float16:
+                x = _DepthWiseConv2dImplicitGEMMFP16.apply(input, SD.ConstructKernel2d.apply(weight, P1, P2, self.dilated_kernel_size, self.scaling))
+            else:
+                raise TypeError("Only support fp32 and fp16, get {}".format(x.dtype))
+            if self.bias is not None:
+                x = x + self.bias.to(x).view(1, -1, 1, 1)
+            return x
+        else:
+            if self.padding_mode != 'zeros':
+                return F.conv2d(F.pad(input, self._reversed_padding_repeated_twice, mode=self.padding_mode),
+                                SD.ConstructKernel2d.apply(weight, P1, P2, self.dilated_kernel_size, self.scaling), bias,
+                                self.stride, _pair(0), _pair(1), self.groups)
+            return F.conv2d(input, SD.ConstructKernel2d.apply(weight, P1, P2, self.dilated_kernel_size, self.scaling), bias,
+                                   self.stride, self.padding, _pair(1), self.groups)
     
-
     def forward(self, input: Tensor) -> Tensor:
         if (self.dilated_kernel_size[0] * self.dilated_kernel_size[1] == 1) :
             return F.conv2d(input, self.weight, self.bias, self.stride, self.padding, _pair(1), self.groups)
         else:
+            
             return self._conv_forward(input, self.weight, self.bias, self.P.select(0,0), self.P.select(0,1));
     
 
