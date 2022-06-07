@@ -22,12 +22,12 @@ def get_extensions():
     extensions_dir_construct = os.path.join(this_dir, 'DCLS/construct/src')
     extensions_dir = os.path.join(this_dir, 'DCLS/src')    
 
-    ext_list_construct = [#'dcls_construct_1d',
+    ext_list_construct = ['dcls_construct_1d',
                           #'dcls_construct_2_1d',                
                           'dcls_construct_2d',
                           #'dcls_construct_3_1d',
                           #'dcls_construct_3_2d',                
-                          #'dcls_construct_3d'
+                          'dcls_construct_3d'
                          ]
     ext_list = [#'dcls_2d',
                 #'im2col_dcls_2d',
