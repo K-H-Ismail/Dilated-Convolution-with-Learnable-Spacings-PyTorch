@@ -8,6 +8,10 @@
 
 #include <math.h>
 
+#if !defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 600
+#else
+__device__ double atomicAdd(double* a, double b) { return b; }
+#endif
 
 #define CUDA_KERNEL_LOOP(i, n)                                                 \
   for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < (n);                 \
