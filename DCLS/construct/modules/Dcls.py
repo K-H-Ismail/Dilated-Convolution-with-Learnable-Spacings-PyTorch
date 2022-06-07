@@ -17,7 +17,7 @@ from typing import Optional, List, Tuple
 import operator
 import functools
 try:
-    from depthwise_conv2d_implicit_gemm import _DepthWiseConv2dImplicitGEMMFP32, _DepthWiseConv2dImplicitGEMMFP16            
+    from depthwise_conv2d_implicit_gemm import _DepthWiseConv2dImplicitGEMMFP32, _DepthWiseConv2dImplicitGEMMFP16
 except ImportError as error:
     # Output expected ImportErrors.
     Logging.log_exception(error)
@@ -30,128 +30,8 @@ except Exception as exception:
     Logging.log_exception(exception, False)
     Logging.log('switching to native conv2d')
 
-# overloading + and // operators for Union(int,Tuple[int,...])
-class _size_1_op_t:
-    def __init__(self, a: _size_1_t):
-        self.matter = a
-        self.type = type(a)
- 
-    def _op_tuple(self, a: tuple, b: tuple, binary_op):
-        return _size_1_op_t((binary_op(a[0],b[0]),))
-    
-    def _op_tuple_int(self, a: tuple, b: int, binary_op):
-        return _size_1_op_t((binary_op(a[0],b),))
-    
-    def _op_int_tuple(self, a: int, b: tuple, binary_op):
-        return _size_1_op_t((binary_op(a,b[0]),))
-    
-    def _op_int(self, a: int, b: int, binary_op):
-        return _size_1_op_t(binary_op(a,b))    
-    
-    def __add__(self, other: _size_1_t):      
-        if (self.type == tuple and other.type == tuple):
-            return self._op_tuple(self.matter, other.matter, operator.__add__)            
-        elif (self.type == tuple and other.type == int):
-            return self._op_tuple_int(self.matter, other.matter, operator.__add__)            
-        elif (self.type == int and other.type == tuple):
-            return self._op_int_tuple(self.matter, other.matter, operator.__add__)          
-        else:
-            return self._op_int(self.matter, other.matter, operator.__add__)
-        
-    def __floordiv__(self, other: _size_1_t):
-        if (self.type == tuple and other.type == tuple):
-            return self._op_tuple(self.matter, other.matter, operator.__floordiv__)            
-        elif (self.type == tuple and other.type == int):
-            return self._op_tuple_int(self.matter, other.matter, operator.__floordiv__)            
-        elif (self.type == int and other.type == tuple):
-            return self._op_int_tuple(self.matter, other.matter, operator.__floordiv__)          
-        else:
-            return self._op_int(self.matter, other.matter, operator.__floordiv__)
-        
-    def get(self):
-        return _single(self.matter)
-        
-class _size_2_op_t:
-    def __init__(self, a: _size_2_t):
-        self.matter = a
-        self.type = type(a)
- 
-    def _op_tuple(self, a: tuple, b: tuple, binary_op):
-        return _size_2_op_t((binary_op(a[0],b[0]), binary_op(a[1],b[1])))
-    
-    def _op_tuple_int(self, a: tuple, b: int, binary_op):
-        return _size_2_op_t((binary_op(a[0],b), binary_op(a[1],b)))
-    
-    def _op_int_tuple(self, a: int, b: tuple, binary_op):
-        return _size_2_op_t((binary_op(a,b[0]), binary_op(a,b[1])))
-    
-    def _op_int(self, a: int, b: int, binary_op):
-        return _size_2_op_t(binary_op(a,b))     
-    
-    def __add__(self, other: _size_2_t):
-        if (self.type == tuple and other.type == tuple):
-            return self._op_tuple(self.matter, other.matter, operator.__add__)            
-        elif (self.type == tuple and other.type == int):
-            return self._op_tuple_int(self.matter, other.matter, operator.__add__)            
-        elif (self.type == int and other.type == tuple):
-            return self._op_int_tuple(self.matter, other.matter, operator.__add__)          
-        else:
-            return self._op_int(self.matter, other.matter, operator.__add__)  
-        
-    def __floordiv__(self, other: _size_2_t):
-        if (self.type == tuple and other.type == tuple):
-            return self._op_tuple(self.matter, other.matter, operator.__floordiv__)            
-        elif (self.type == tuple and other.type == int):
-            return self._op_tuple_int(self.matter, other.matter, operator.__floordiv__)            
-        elif (self.type == int and other.type == tuple):
-            return self._op_int_tuple(self.matter, other.matter, operator.__floordiv__)          
-        else:
-            return self._op_int(self.matter, other.matter, operator.__floordiv__)
-        
-    def get(self):
-        return _pair(self.matter)        
-        
-class _size_3_op_t:
-    def __init__(self, a: _size_3_t):
-        self.matter = a
-        self.type = type(a)
- 
-    def _op_tuple(self, a: tuple, b: tuple, binary_op):
-        return _size_2_op_t((binary_op(a[0],b[0]), binary_op(a[1],b[1]), binary_op(a[2],b[2])))
-    
-    def _op_tuple_int(self, a: tuple, b: int, binary_op):
-        return _size_2_op_t((binary_op(a[0],b), binary_op(a[1],b), binary_op(a[2],b)))
-    
-    def _op_int_tuple(self, a: int, b: tuple, binary_op):
-        return _size_2_op_t((binary_op(a,b[0]), binary_op(a,b[1]), binary_op(a,b[2])))
-    
-    def _op_int(self, a: int, b: int, binary_op):
-        return _size_3_op_t(binary_op(a,b))     
-    
-    def __add__(self, other: _size_3_t):
-        if (self.type == tuple and other.type == tuple):
-            return self._op_tuple(self.matter, other.matter, operator.__add__)            
-        elif (self.type == tuple and other.type == int):
-            return self._op_tuple_int(self.matter, other.matter, operator.__add__)            
-        elif (self.type == int and other.type == tuple):
-            return self._op_int_tuple(self.matter, other.matter, operator.__add__)          
-        else:
-            return self._op_int(self.matter, other.matter, operator.__add__) 
-        
-    def __floordiv__(self, other: _size_3_t):
-        if (self.type == tuple and other.type == tuple):
-            return self._op_tuple(self.matter, other.matter, operator.__floordiv__)            
-        elif (self.type == tuple and other.type == int):
-            return self._op_tuple_int(self.matter, other.matter, operator.__floordiv__)            
-        elif (self.type == int and other.type == tuple):
-            return self._op_int_tuple(self.matter, other.matter, operator.__floordiv__)          
-        else:
-            return self._op_int(self.matter, other.matter, operator.__floordiv__)
-        
-    def get(self):
-        return _triple(self.matter)        
-        
-    
+
+
 convolution_notes = \
     {"groups_note": r"""* :attr:`groups` controls the connections between inputs and outputs.
       :attr:`in_channels` and :attr:`out_channels` must both be divisible by
@@ -196,9 +76,9 @@ class _DclsNd(Module):
     groups: int
     padding_mode: str
     weight: Tensor
-    bias: Optional[Tensor]      
-    scaling: float 
-        
+    bias: Optional[Tensor]
+    scaling: float
+
     def __init__(self,
                  in_channels: int,
                  out_channels: int,
@@ -230,7 +110,7 @@ class _DclsNd(Module):
         self.transposed = transposed
         self.output_padding = output_padding
         self.groups = groups
-        self.scaling = scaling        
+        self.scaling = scaling
         self.padding_mode = padding_mode
         # `_reversed_padding_repeated_twice` is the padding to be passed to
         # `F.pad` if needed (e.g., for non-zero padding types that are
@@ -243,43 +123,41 @@ class _DclsNd(Module):
         else:
             self.weight = Parameter(torch.Tensor(
                 out_channels, in_channels // groups, kernel_count))
-            
+
         if bias:
             self.bias = Parameter(torch.empty(out_channels))
         else:
-            self.register_parameter('bias', None)         
+            self.register_parameter('bias', None)
 
-        self.P = Parameter(torch.Tensor(len(dilated_kernel_size), out_channels, in_channels // groups, kernel_count))          
+        self.P = Parameter(torch.Tensor(len(dilated_kernel_size), out_channels, in_channels // groups, kernel_count))
         self.reset_parameters()
-        
+
     def reset_parameters(self) -> None:
         init.kaiming_uniform_(self.weight, a=math.sqrt(5))
         if self.bias is not None:
             fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
             bound = 1 / math.sqrt(fan_in)
             init.uniform_(self.bias, -bound, bound)
-        #init.zeros_(self.P)
         for i in range(len(self.dilated_kernel_size)):
-            lim = self.dilated_kernel_size[i] // 2 
+            lim = self.dilated_kernel_size[i] // 2
             with torch.no_grad():
-                #init.uniform_(self.P.select(0,i), -lim, lim).div_(scaling)    
-                init.normal_(self.P.select(0,i), 0, 1).clamp(-lim, lim).div_(self.scaling)
-                
+                init.normal_(self.P.select(0,i), 0, 0.5).clamp(-lim, lim).div_(self.scaling)
+
     def clamp_parameters(self) -> None:
         for i in range(len(self.dilated_kernel_size)):
-            with torch.no_grad():            
-                lim = self.dilated_kernel_size[i] // 2 
-                self.P.select(0,i).clamp_(-lim, lim)            
-        
+            with torch.no_grad():
+                lim = self.dilated_kernel_size[i] // 2
+                self.P.select(0,i).clamp_(-lim, lim)
+
     def extra_repr(self):
         s = ('{in_channels}, {out_channels}, kernel_count={kernel_count} (previous kernel_size)'
              ', stride={stride}')
         if self.padding != (0,) * len(self.padding):
             s += ', padding={padding}'
-        if self.dilated_kernel_size != (1,) * len(self.dilated_kernel_size): 
+        if self.dilated_kernel_size != (1,) * len(self.dilated_kernel_size):
             s += ', dilated_kernel_size={dilated_kernel_size} (learnable)'
-        if self.scaling != 1.0: 
-            s += ', scaling={scaling} (applied scaling)'             
+        if self.scaling != 1.0:
+            s += ', scaling={scaling} (applied scaling)'
         if self.output_padding != (0,) * len(self.output_padding):
             s += ', output_padding={output_padding}'
         if self.groups != 1:
@@ -288,6 +166,9 @@ class _DclsNd(Module):
             s += ', bias=False'
         if self.padding_mode != 'zeros':
             s += ', padding_mode={padding_mode}'
+        if (self.in_channels == self.out_channels == self.groups
+            and self.padding[0] ==  self.dilated_kernel_size[0] // 2):
+            s += ', (using DepthWiseConv2dImplicitGEMMFP32)'
         return s.format(**self.__dict__)
 
     def __setstate__(self, state):
@@ -297,9 +178,9 @@ class _DclsNd(Module):
 
 class _DclsN_Md(Module):
 
-    __constants__ = ['dim_dilation', 'stride', 'padding', 'dilation', 'groups',
+    __constants__ = ['dim_dilation', 'stride', 'padding', 'dilated_kernel_size', 'groups',
                      'padding_mode', 'output_padding', 'in_channels',
-                     'out_channels', 'kernel_size', 'gain']
+                     'out_channels', 'kernel_count', 'scaling']
     __annotations__ = {'bias': Optional[torch.Tensor]}
 
     def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor]) -> Tensor:
@@ -307,33 +188,32 @@ class _DclsN_Md(Module):
 
     _in_channels: int
     out_channels: int
-    kernel_size: Tuple[int, ...]
+    kernel_count: int
     stride: Tuple[int, ...]
     padding: Tuple[int, ...]
-    dilation: Tuple[int, ...]
+    dilated_kernel_size: Tuple[int, ...]
+    dim_dilation: Tuple[int, ...]
     transposed: bool
     output_padding: Tuple[int, ...]
     groups: int
     padding_mode: str
     weight: Tensor
     bias: Optional[Tensor]
-    dim_dilation: Tuple[int, ...]
-    gain : float
-
+    scaling: float
     def __init__(self,
                  in_channels: int,
                  out_channels: int,
-                 kernel_size: Tuple[int, ...],
+                 kernel_count: int,
                  stride: Tuple[int, ...],
                  padding: Tuple[int, ...],
-                 dilation: Tuple[int, ...],
-                 dim_dilation: Tuple[int, ...],                 
+                 dilated_kernel_size: Tuple[int, ...],
+                 dim_dilation: Tuple[int, ...],
                  transposed: bool,
                  output_padding: Tuple[int, ...],
                  groups: int,
                  bias: bool,
                  padding_mode: str,
-                 gain: float) -> None:
+                 scaling: float) -> None:
         super(_DclsN_Md, self).__init__()
         if in_channels % groups != 0:
             raise ValueError('in_channels must be divisible by groups')
@@ -345,15 +225,15 @@ class _DclsN_Md(Module):
                 valid_padding_modes, padding_mode))
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.kernel_size = kernel_size
+        self.kernel_count = kernel_count
         self.stride = stride
         self.padding = padding
-        self.dilation = dilation
-        self.dim_dilation = dim_dilation        
+        self.dilated_kernel_size = dilated_kernel_size
+        self.dim_dilation = dim_dilation
         self.transposed = transposed
         self.output_padding = output_padding
         self.groups = groups
-        self.gain = gain        
+        self.scaling = scaling
         self.padding_mode = padding_mode
         # `_reversed_padding_repeated_twice` is the padding to be passed to
         # `F.pad` if needed (e.g., for non-zero padding types that are
@@ -366,14 +246,13 @@ class _DclsN_Md(Module):
         else:
             self.weight = Parameter(torch.Tensor(
                 out_channels, in_channels // groups, *kernel_size))
-            
+
         if bias:
             self.bias = Parameter(torch.empty(out_channels))
         else:
-            self.register_parameter('bias', None) 
-            
+            self.register_parameter('bias', None)
+
         self.P = Parameter(torch.Tensor(len(dim_dilation), out_channels, in_channels // groups, *kernel_size))
-        self.kernel_count = kernel_size if type(kernel_size) == int else functools.reduce(lambda a, b: a*b, kernel_size)
         self.reset_parameters()
 
     def reset_parameters(self) -> None:
@@ -382,23 +261,21 @@ class _DclsN_Md(Module):
             fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
             bound = 1 / math.sqrt(fan_in)
             init.uniform_(self.bias, -bound, bound)
-        #init.zeros_(self.P)
+
         for i in range(len(self.dim_dilation)):
-            lim = self.kernel_size[i] // 2 
-            scaling = self.gain * math.sqrt((self.in_channels // self.groups) * self.out_channels * self.kernel_count)
+            lim = self.kernel_size[i] // 2
             with torch.no_grad():
-                init.uniform_(self.P.select(0,i), -lim, lim).div_(scaling)    
-                #init.normal_(self.P.select(0,i), 0, 1).clamp(-lim, lim).div_(scaling)     
+                init.normal_(self.P.select(0,i), 0, 0.5).clamp(-lim, lim).div_(scaling)
 
     def extra_repr(self):
         s = ('{in_channels}, {out_channels}, kernel_size={kernel_size}'
              ', stride={stride}')
         if self.padding != (0,) * len(self.padding):
             s += ', padding={padding}'
-        if self.dilation != (1,) * len(self.dilation): 
+        if self.dilation != (1,) * len(self.dilation):
             s += ', dilation_max={dilation} (learnable along {dim_dilation})'
-        if self.gain != 1.0: 
-            s += ', gain={gain} (an extra multiplicative factor is applied to scaling)'             
+        if self.gain != 1.0:
+            s += ', gain={gain} (an extra multiplicative factor is applied to scaling)'
         if self.output_padding != (0,) * len(self.output_padding):
             s += ', output_padding={output_padding}'
         if self.groups != 1:
@@ -507,35 +384,34 @@ class Dcls1d(_DclsNd):
         self,
         in_channels: int,
         out_channels: int,
-        kernel_size: _size_1_t,
+        kernel_count: int,
         stride: _size_1_t = 1,
         padding: _size_1_t = 0,
-        dilation: _size_1_t = 1,
+        dilated_kernel_size: _size_1_t = 1,
         groups: int = 1,
         bias: bool = True,
         padding_mode: str = 'zeros',  # TODO: refine this type
-        gain: float = 1.0  
-    ):           
+        scaling: float = 1.0
+    ):
         # we create new variables below to make mypy happy since kernel_size has
         # type Union[int, Tuple[int]] and kernel_size_ has type Tuple[int]
-        kernel_size_ = _single(kernel_size)
         stride_ = _single(stride)
-        padding_ = _single(padding) 
-        dilation_ = _single(dilation)
+        padding_ = _single(padding)
+        dilated_kernel_size_ = _single(dilated_kernel_size)
         super(Dcls1d, self).__init__(
-            in_channels, out_channels, kernel_size_, stride_, padding_, dilation_,
-            False, _single(0), groups, bias, padding_mode, gain)
-    
+            in_channels, out_channels, kernel_count, stride_, padding_, dilated_kernel_size_,
+            False, _single(0), groups, bias, padding_mode, scaling)
+
     def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor], P: Tensor):
         if self.padding_mode != 'zeros':
             return F.conv1d(F.pad(input, self._reversed_padding_repeated_twice, mode=self.padding_mode),
-                            SD.ConstructKernel1d.apply(weight, P, self.dilation, self.gain), bias, self.stride,
+                            SD.ConstructKernel1d.apply(weight, P, self.dilated_kernel_size, self.scaling), bias, self.stride,
                             _single(0), _single(1), self.groups)
-        return F.conv1d(input, SD.ConstructKernel1d.apply(weight, P, self.dilation, self.gain), bias, self.stride,
+        return F.conv1d(input, SD.ConstructKernel1d.apply(weight, P, self.dilated_kernel_size, self.scaling), bias, self.stride,
                         self.padding, _single(1), self.groups)
 
     def forward(self, input: Tensor) -> Tensor:
-        return self._conv_forward(input, self.weight, self.bias, self.P.select(0,0))
+            return self._conv_forward(input, self.weight, self.bias, self.P.select(0,0))
 
 
 class Dcls2d(_DclsNd):
@@ -653,21 +529,24 @@ class Dcls2d(_DclsNd):
         groups: int = 1,
         bias: bool = True,
         padding_mode: str = 'zeros',  # TODO: refine this type
-        scaling: float = 1.0        
-    ):            
+        scaling: float = 1.0
+    ):
         stride_ = _pair(stride)
         padding_ = _pair(padding)
         dilated_kernel_size_ = _pair(dilated_kernel_size)
         super(Dcls2d, self).__init__(
             in_channels, out_channels, kernel_count, stride_, padding_, dilated_kernel_size_,
             False, _pair(0), groups, bias, padding_mode, scaling)
-        
+
     def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor], P1: Tensor, P2: Tensor):
-        if self.in_channels == self.out_channels == self.groups and False and self.padding[0] ==  self.dilated_kernel_size[0] // 2:
+        if (self.in_channels == self.out_channels == self.groups
+            and self.padding[0] ==  self.dilated_kernel_size[0] // 2):
             if input.dtype == torch.float32:
-                x = _DepthWiseConv2dImplicitGEMMFP32.apply(input, SD.ConstructKernel2d.apply(weight, P1, P2, self.dilated_kernel_size, self.scaling))
+                x = _DepthWiseConv2dImplicitGEMMFP32.apply(
+                    input, SD.ConstructKernel2d.apply(weight, P1, P2, self.dilated_kernel_size, self.scaling))
             elif x.dtype == torch.float16:
-                x = _DepthWiseConv2dImplicitGEMMFP16.apply(input, SD.ConstructKernel2d.apply(weight, P1, P2, self.dilated_kernel_size, self.scaling))
+                x = _DepthWiseConv2dImplicitGEMMFP16.apply(
+                    input, SD.ConstructKernel2d.apply(weight, P1, P2, self.dilated_kernel_size, self.scaling))
             else:
                 raise TypeError("Only support fp32 and fp16, get {}".format(x.dtype))
             if self.bias is not None:
@@ -680,17 +559,13 @@ class Dcls2d(_DclsNd):
                                 self.stride, _pair(0), _pair(1), self.groups)
             return F.conv2d(input, SD.ConstructKernel2d.apply(weight, P1, P2, self.dilated_kernel_size, self.scaling), bias,
                                    self.stride, self.padding, _pair(1), self.groups)
-    
+
     def forward(self, input: Tensor) -> Tensor:
-        if (self.dilated_kernel_size[0] * self.dilated_kernel_size[1] == 1) :
-            return F.conv2d(input, self.weight, self.bias, self.stride, self.padding, _pair(1), self.groups)
-        else:
-            
             return self._conv_forward(input, self.weight, self.bias, self.P.select(0,0), self.P.select(0,1));
-    
 
 
-    
+
+
 class Dcls3d(_DclsNd):
     __doc__ = r"""Applies a 3D convolution over an input signal composed of several input
     planes.
@@ -789,36 +664,34 @@ class Dcls3d(_DclsNd):
         self,
         in_channels: int,
         out_channels: int,
-        kernel_size: _size_3_t,
+        kernel_count: int,
         stride: _size_3_t = 1,
         padding: _size_3_t = 0,
-        dilation: _size_3_t = 1,
+        dilated_kernel_size: _size_3_t = 1,
         groups: int = 1,
         bias: bool = True,
-        padding_mode: str = 'zeros'
-    ):        
-        kernel_size_ = _triple(kernel_size)
+        padding_mode: str = 'zeros',
+        scaling: float = 1.0
+    ):
         stride_ = _triple(stride)
-        padding_ = (_size_3_op_t(padding) + _size_3_op_t(dilation) // _size_3_op_t(2)).get()
-        dilation_ = _triple(dilation)
+        padding_ = _triple(padding)
+        dilated_kernel_size_ = _triple(dilated_kernel_size)
         super(Dcls3d, self).__init__(
-            in_channels, out_channels, kernel_size_, stride_, padding_, dilation_, 
-            False, _triple(0), groups, bias, padding_mode)
-        
+            in_channels, out_channels, kernel_count, stride_, padding_, dilated_kernel_size_,
+            False, _triple(0), groups, bias, padding_mode, scaling)
+
     def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor], P1: Tensor, P2: Tensor, P3: Tensor):
         if self.padding_mode != 'zeros':
             return F.conv3d(F.pad(input, self._reversed_padding_repeated_twice, mode=self.padding_mode),
-                            SD.ConstructKernel3d.apply(weight, P1, P2, P3, self.dilation), bias, self.stride,
-                            _triple(0), _triple(1), self.groups)
-        return F.conv3d(input, SD.ConstructKernel3d.apply(weight, P1, P2, P3, self.dilation), bias, self.stride,
-                        self.padding, _triple(1), self.groups)
+                            SD.ConstructKernel3d.apply(weight, P1, P2, P3, self.dilated_kernel_size, self.scaling), bias,
+                            self.stride, _triple(0), _triple(1), self.groups)
+        return F.conv3d(input, SD.ConstructKernel3d.apply(weight, P1, P2, P3, self.dilated_kernel_size, self.scaling),
+                        bias, self.stride, self.padding, _triple(1), self.groups)
 
     def forward(self, input: Tensor) -> Tensor:
-        return self._conv_forward(input, self.weight, self.bias, self.P.select(0,0), self.P.select(0,1), self.P.select(0,2)) 
+            return self._conv_forward(input, self.weight, self.bias, self.P.select(0,0), self.P.select(0,1), self.P.select(0,2))
 
 
-
-    
 class Dcls2_1d(_DclsN_Md):
     __doc__ = r"""Applies a 2D convolution over an input signal composed of several input
     planes.
@@ -931,18 +804,18 @@ class Dcls2_1d(_DclsN_Md):
         stride: _size_2_t = 1,
         padding: _size_2_t = 0,
         dilation: _size_2_t = 1,
-        dim_dilation: _size_1_t = 0,        
+        dim_dilation: _size_1_t = 0,
         groups: int = 1,
         bias: bool = True,
         padding_mode: str = 'zeros'  # TODO: refine this type
     ):
-        
+
         def _adjust_padding(padding, dilation):
             if (type(padding) == tuple):
                 return (padding[0] + dilation[0] // 2, padding[1])
             else:
                 return _pair(padding + dilation // 2)
-        
+
         kernel_size_ = _pair(kernel_size)
         stride_ = _pair(stride)
         padding_ = _adjust_padding(padding, dilation)
@@ -950,7 +823,7 @@ class Dcls2_1d(_DclsN_Md):
         super(Dcls2_1d, self).__init__(
             in_channels, out_channels, kernel_size_, stride_, padding_, dilation_, dim_dilation,
             False, _pair(0), groups, bias, padding_mode)
-        
+
     def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor], P1: Tensor):
         if self.padding_mode != 'zeros':
             return F.conv2d(F.pad(input, self._reversed_padding_repeated_twice, mode=self.padding_mode),
@@ -960,10 +833,10 @@ class Dcls2_1d(_DclsN_Md):
                         self.padding, _pair(1), self.groups)
 
     def forward(self, input: Tensor) -> Tensor:
-        return self._conv_forward(input, self.weight, self.bias, self.P.select(0,0)) 
-                      
-                      
-                      
+        return self._conv_forward(input, self.weight, self.bias, self.P.select(0,0))
+
+
+
 class Dcls3_1d(_DclsN_Md):
 
     def __init__(
@@ -974,23 +847,23 @@ class Dcls3_1d(_DclsN_Md):
         stride: _size_3_t = 1,
         padding: _size_3_t = 0,
         dilation: _size_3_t = 1,
-        dim_dilation: _size_1_t = 0,         
+        dim_dilation: _size_1_t = 0,
         groups: int = 1,
         bias: bool = True,
         padding_mode: str = 'zeros',
-        gain: float = 1.0 
+        gain: float = 1.0
     ):
 
         kernel_size_ = _triple(kernel_size)
         stride_ = _triple(stride)
         padding_ = _triple(padding)
         dilation_ = _triple(dilation)
-        dim_dilation_ = _triple(dim_dilation)        
+        dim_dilation_ = _triple(dim_dilation)
         super(Dcls3_1d, self).__init__(
             in_channels, out_channels, kernel_size_, stride_, padding_, dilation_, dim_dilation_,
             False, _triple(0), groups, bias, padding_mode, gain)
 
-    
+
     def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor], P: Tensor):
         if self.padding_mode != 'zeros':
             return F.conv3d(F.pad(input, self._reversed_padding_repeated_twice, mode=self.padding_mode),
@@ -1001,8 +874,8 @@ class Dcls3_1d(_DclsN_Md):
 
     def forward(self, input: Tensor) -> Tensor:
         return self._conv_forward(input, self.weight, self.bias, self.P.select(0,0))
-    
-    
+
+
 class Dcls3_2d(_DclsN_Md):
 
     def __init__(
@@ -1013,7 +886,7 @@ class Dcls3_2d(_DclsN_Md):
         stride: _size_3_t = 1,
         padding: _size_3_t = 0,
         dilation: _size_3_t = 1,
-        dim_dilation: _size_2_t = (0,1),         
+        dim_dilation: _size_2_t = (0,1),
         groups: int = 1,
         bias: bool = True,
         padding_mode: str = 'zeros'
@@ -1024,7 +897,7 @@ class Dcls3_2d(_DclsN_Md):
                 return (padding[0] + dilation[0] // 2, padding[1] + dilation[1] // 2, padding[2])
             else:
                 return _triple(padding + dilation // 2)
-        
+
         kernel_size_ = _triple(kernel_size)
         stride_ = _triple(stride)
         padding_ = _adjust_padding()
@@ -1032,7 +905,7 @@ class Dcls3_2d(_DclsN_Md):
         super(Dcls3_1d, self).__init__(
             in_channels, out_channels, kernel_size_, stride_, padding_, dilation_, dim_dilation,
             False, _triple(0), groups, bias, padding_mode)
-    
+
     def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor], P1: Tensor, P2: Tensor):
         if self.padding_mode != 'zeros':
             return F.conv3d(F.pad(input, self._reversed_padding_repeated_twice, mode=self.padding_mode),
@@ -1042,8 +915,8 @@ class Dcls3_2d(_DclsN_Md):
                         self.padding, _triple(1), self.groups)
 
     def forward(self, input: Tensor) -> Tensor:
-        return self._conv_forward(input, self.weight, self.bias, self.P.select(0,0), self.P.select(0,1))    
-    
-    
+        return self._conv_forward(input, self.weight, self.bias, self.P.select(0,0), self.P.select(0,1))
 
-                
+
+
+
