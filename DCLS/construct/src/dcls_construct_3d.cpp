@@ -11,7 +11,8 @@ torch::Tensor dcls_construct_3d_cuda_forward(
     torch::Tensor P1,
     torch::Tensor P2,
     torch::Tensor P3,    
-    const int dilation_d, const int dilation_h, const int dilation_w
+    const int dilated_kernel_size_d, const int dilated_kernel_size_h, const int dilated_kernel_size_w,
+    const float scaling
     ); 
 
 std::vector<torch::Tensor> dcls_construct_3d_cuda_backward(   
@@ -20,7 +21,8 @@ std::vector<torch::Tensor> dcls_construct_3d_cuda_backward(
     torch::Tensor P2,
     torch::Tensor P3,    
     torch::Tensor grad_output,      
-    const int dilation_d, const int dilation_h, const int dilation_w
+    const int dilated_kernel_size_d, const int dilated_kernel_size_h, const int dilated_kernel_size_w,
+    const float scaling
     ); 
     
 // C++ interface
@@ -34,7 +36,8 @@ torch::Tensor dcls_construct_3d_forward(
     torch::Tensor P1,
     torch::Tensor P2,
     torch::Tensor P3,
-    const int dilation_d, const int dilation_h, const int dilation_w
+    const int dilated_kernel_size_d, const int dilated_kernel_size_h, const int dilated_kernel_size_w,
+    const float scaling
     ) {
   
     CHECK_INPUT(weight);
@@ -48,9 +51,10 @@ torch::Tensor dcls_construct_3d_forward(
                               P1,
                               P2,
                               P3,                              
-                              dilation_d,
-                              dilation_h,
-                              dilation_w                              
+                              dilated_kernel_size_d,
+                              dilated_kernel_size_h,
+                              dilated_kernel_size_w,
+                              scaling                              
                               ); 
 }
 
@@ -60,7 +64,8 @@ std::vector<torch::Tensor> dcls_construct_3d_backward(
     torch::Tensor P2,
     torch::Tensor P3,
     torch::Tensor grad_output,      
-    const int dilation_d, const int dilation_h, const int dilation_w
+    const int dilated_kernel_size_d, const int dilated_kernel_size_h, const int dilated_kernel_size_w,
+    const float scaling
     ) {
       
     CHECK_INPUT(weight);
@@ -75,9 +80,10 @@ std::vector<torch::Tensor> dcls_construct_3d_backward(
                               P2,
                               P3,
                               grad_output,
-                              dilation_d,
-                              dilation_h,
-                              dilation_w 
+                              dilated_kernel_size_d,
+                              dilated_kernel_size_h,
+                              dilated_kernel_size_w,
+                              scaling 
                               ); 
 }
 
