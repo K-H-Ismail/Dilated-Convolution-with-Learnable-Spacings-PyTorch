@@ -29,8 +29,8 @@ def get_extensions():
                           #'dcls_construct_3_2d',                
                           'dcls_construct_3d'
                          ]
-    ext_list = [#'dcls_2d',
-                #'im2col_dcls_2d',
+    ext_list = ['dcls_2d',
+                'im2col_dcls_2d',
                 #'rsconv_2d',
                 #'im2col_rsconv_2d'
                 ]
