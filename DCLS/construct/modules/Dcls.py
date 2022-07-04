@@ -16,19 +16,20 @@ from torch.nn.common_types import _size_1_t, _size_2_t, _size_3_t
 from typing import Optional, List, Tuple
 import operator
 import functools
+import logging
 try:
     from depthwise_conv2d_implicit_gemm import _DepthWiseConv2dImplicitGEMMFP32, _DepthWiseConv2dImplicitGEMMFP16
 except ImportError as error:
     # Output expected ImportErrors.
-    Logging.log_exception(error)
+    logging.error(error)
     # Include the name and path attributes in output.
-    Logging.log(f'error.name: {error.name}')
-    Logging.log(f'error.path: {error.path}')
-    Logging.log('switching to native conv2d')
+    logging.errorerror(f'error.name: {error.name}')
+    logging.error(f'error.path: {error.path}')
+    logging.info('switching to native conv2d')
 except Exception as exception:
     # Output unexpected Exceptions.
-    Logging.log_exception(exception, False)
-    Logging.log('switching to native conv2d')
+    logging.error(exception)
+    logging.info('switching to native conv2d')
 
 
 
@@ -120,16 +121,18 @@ class _DclsNd(Module):
         if transposed:
             self.weight = Parameter(torch.Tensor(
                 in_channels, out_channels // groups, kernel_count))
+            self.P = Parameter(torch.Tensor(len(dilated_kernel_size), in_channels // groups,
+                                            out_channels, kernel_count))
         else:
             self.weight = Parameter(torch.Tensor(
                 out_channels, in_channels // groups, kernel_count))
-
+            self.P = Parameter(torch.Tensor(len(dilated_kernel_size),
+                                            out_channels, in_channels // groups, kernel_count))
         if bias:
             self.bias = Parameter(torch.empty(out_channels))
         else:
             self.register_parameter('bias', None)
 
-        self.P = Parameter(torch.Tensor(len(dilated_kernel_size), out_channels, in_channels // groups, kernel_count))
         self.reset_parameters()
 
     def reset_parameters(self) -> None:
