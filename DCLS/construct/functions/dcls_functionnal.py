@@ -53,11 +53,11 @@ class ConstructKernel2d(ConstructKernel):
         ctx.dilated_kernel_size = dilated_kernel_size
         ctx.scaling = scaling
 
-        ctx.save_for_backward(weight, P1, P2)
+        ctx.save_for_backward(weight, P1.contiguous(), P2.contiguous())
 
         output = dcls_construct_2d.forward(weight,
-                                           P1,
-                                           P2,
+                                           P1.contiguous(),
+                                           P2.contiguous(),
                                            ctx.dilated_kernel_size[0],
                                            ctx.dilated_kernel_size[1],
                                            ctx.scaling
