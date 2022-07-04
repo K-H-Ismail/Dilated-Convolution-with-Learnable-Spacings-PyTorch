@@ -33,11 +33,11 @@ namespace constants {
     const long GLOBAL_FREE_MEMORY = GET_FREE_MEMORY();
 }
 
-// col2im kernel, identical to the one in CuDNN 
+// col2im kernel, identical to the one in CuDNN
 template <typename scalar_t>
 __global__ void col2im_kernel(
     const int n,
-    const scalar_t* data_col, 
+    const scalar_t* data_col,
     const int height,
     const int width,
     const int channels,
@@ -89,20 +89,20 @@ __global__ void col2im_kernel(
   }
 }
 
-// Adaptation of im2col kernel to dcls case 
+// Adaptation of im2col kernel to dcls case
 template <typename scalar_t>
 __global__ void im2col_dcls_2d_batch_kernel(
     const int n,
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> input,
-    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> P_h, 
-    torch::PackedTensorAccessor32<scalar_t,3,torch::RestrictPtrTraits> P_w,
+    torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> P_h,
+    torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> P_w,
     const int height_in, const int width_in,
     const int ch_in, const int batch_size,
-    const int kernel_h, const int kernel_w,
+    const int kernel,
     const int height_out, const int width_out,
     const int pad_h, const int pad_w,
     const int stride_h, const int stride_w,
-    const int dilation_h, const int dilation_w,
+    const int dilated_kernel_size_h, const int dilated_kernel_size_w,
     const int groups,
     torch::PackedTensorAccessor32<scalar_t,5,torch::RestrictPtrTraits> data_col) {
   CUDA_KERNEL_LOOP(index, n) {
@@ -111,155 +111,152 @@ __global__ void im2col_dcls_2d_batch_kernel(
     int channel_in = (index / height_out / width_out) % ch_in;
     int group = (index / height_out / width_out / ch_in) % groups;
     int batch = (index / height_out / width_out / ch_in / groups) % batch_size;
-      
+
     int h_in = h_out * stride_h - pad_h;
     int w_in = w_out * stride_w - pad_w;
 
-    for (int i = 0; i < kernel_h; ++i) {
-      for (int j = 0; j < kernel_w; ++j) {
-        int l_dilation_h = static_cast<int>(P_h[channel_in][i][j]) ;//i * dilation_h in the standard case;
-        int l_dilation_w = static_cast<int>(P_w[channel_in][i][j]) ;//j * dilation_w in the standard case;
-        
-        // Shifts are used for interpolation
-        for (int shift_h = 0; shift_h < 2; ++shift_h) {
-            for (int shift_w = 0; shift_w < 2; ++shift_w) {
-                int h = h_in + l_dilation_h + shift_h;
-                int w = w_in + l_dilation_w + shift_w;
 
-                if (h >= 0 && w >= 0 && h < height_in && w < width_in) {
-                    data_col[batch][group][shift_h + 2 * shift_w][(channel_in * kernel_h + i) * kernel_w + j]
-                            [h_out * width_out + w_out] = input[batch][group][channel_in][h][w];
-                }
-            }
-        }       
+    for (int i = 0; i < kernel; ++i) {
+      int l_dilation_h = static_cast<int>(P_h[channel_in][i]) ;//i * dilation_h in the standard case;
+      int l_dilation_w = static_cast<int>(P_w[channel_in][i]) ;//j * dilation_w in the standard case;
 
+      // Shifts are used for interpolation
+      for (int shift_h = 0; shift_h < 2; ++shift_h) {
+          for (int shift_w = 0; shift_w < 2; ++shift_w) {
+              int h = h_in + l_dilation_h + shift_h;
+              int w = w_in + l_dilation_w + shift_w;
+
+              if (h >= 0 && w >= 0 && h < height_in && w < width_in) {
+                  data_col[batch][group][shift_h + 2 * shift_w][channel_in * kernel + i]
+                          [h_out * width_out + w_out] = input[batch][group][channel_in][h][w];
+              }
+          }
       }
+
     }
+
   }
 }
 
 // Wrapper for im2col dcls kernel
 torch::Tensor  im2col_dcls_2d_batch_cuda(
     torch::Tensor im,
-    torch::Tensor P_h, torch::Tensor P_w,     
-    const int dilation_h, const int dilation_w, 
+    torch::Tensor P_h, torch::Tensor P_w,
+    const int dilated_kernel_size_h, const int dilated_kernel_size_w,
     const int padding_h, const int padding_w,
     const int stride_h, const int stride_w,
     const int height_out, const int width_out) {
-    
+
     const int batch_size = im.size(0);
     const int groups = im.size(1);
     const int height = im.size(3);
     const int width = im.size(4);
-    
+
     const int channels_in = P_h.size(0);
-    const int kernel_h = P_h.size(1);
-    const int kernel_w = P_h.size(2);    
-    
+    const int kernel = P_h.size(1);
+
     // The output is a batch_size x groups x 4 x channels_in * kernel_h * kernel_w x height_out * width_out tensor
-    // as the interpolation produces 2 x 2 more ouputs  
-    auto columns = at::zeros({batch_size, groups, 4, channels_in * kernel_h * kernel_w, height_out * width_out}, im.options());
-    
+    // as the interpolation produces 2 x 2 more ouputs
+    auto columns = at::zeros({batch_size, groups, 4, channels_in * kernel, height_out * width_out}, im.options());
+
     const int num_kernels = batch_size * channels_in * groups * height_out * width_out;
-    
+
     AT_DISPATCH_FLOATING_TYPES(im.type(), "im2col_dcls_2d_batch_cuda", [&] {
 
         im2col_dcls_2d_batch_kernel<scalar_t><<<GET_BLOCKS(num_kernels), 1024, 0, at::cuda::getCurrentCUDAStream()>>>(
                                          num_kernels,
                                          im.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>(),
-                                         P_h.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
-                                         P_w.packed_accessor32<scalar_t,3,torch::RestrictPtrTraits>(),
+                                         P_h.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                         P_w.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                          height, width,
                                          channels_in, batch_size,
-                                         kernel_h, kernel_w, 
+                                         kernel,
                                          height_out, width_out,
-                                         padding_h, padding_w, 
-                                         stride_h, stride_w, 
-                                         dilation_h, dilation_w,
+                                         padding_h, padding_w,
+                                         stride_h, stride_w,
+                                         dilated_kernel_size_h, dilated_kernel_size_w,
                                          groups,
                                          columns.packed_accessor32<scalar_t,5,torch::RestrictPtrTraits>());
     });
-    
+
     return columns;
 }
 
 torch::Tensor  mm_dcls_2d_forward(
     torch::Tensor im,
-    torch::Tensor weights, 
-    torch::Tensor bias,    
-    torch::Tensor P_h, torch::Tensor P_w,     
-    const int dilation_h, const int dilation_w, 
+    torch::Tensor weights,
+    torch::Tensor bias,
+    torch::Tensor P_h, torch::Tensor P_w,
+    const int dilated_kernel_size_h, const int dilated_kernel_size_w,
     const int padding_h, const int padding_w,
     const int stride_h, const int stride_w,
     const int height_out, const int width_out) {
-    
+
     const int batch_size = im.size(0);
     const int groups = im.size(1);
-    
-    // Weights contains the interpolated weights 
+
+    // Weights contains the interpolated weights
     // weights tensor has a size of groups x channels_out x 4 x channels_in x kernel_h x kernel_w
     const int channels_out = weights.select(2,0).size(1);
     const int channels_in = weights.select(2,0).size(2);
-    const int kernel_h = weights.select(2,0).size(3);
-    const int kernel_w = weights.select(2,0).size(4); 
-    
-    auto output = at::zeros({batch_size, groups, channels_out, height_out * width_out}, im.options());
-   
-    // Call im2col dcls
-    auto columns = im2col_dcls_2d_batch_cuda(im, P_h, P_w, dilation_h, dilation_w, padding_h, padding_w, 
-                                          stride_h, stride_w, height_out, width_out);
-    
-    // Apply matrix-matrix multiplication
-    output = at::matmul(weights.view({groups, channels_out, 4 * channels_in * kernel_h * kernel_w}), 
-                        columns.view({batch_size, groups, 4 * channels_in * kernel_h * kernel_w, height_out * width_out}));
-    
-    // Add bias
-    output = (output.permute({0,3,1,2}) + bias).permute({0,2,3,1});    
+    const int kernel = weights.select(2,0).size(3);
 
-    return output; 
+    auto output = at::zeros({batch_size, groups, channels_out, height_out * width_out}, im.options());
+
+    // Call im2col dcls
+    auto columns = im2col_dcls_2d_batch_cuda(im, P_h, P_w, dilated_kernel_size_h, dilated_kernel_size_w, padding_h, padding_w,
+                                          stride_h, stride_w, height_out, width_out);
+
+    // Apply matrix-matrix multiplication
+    output = at::matmul(weights.view({groups, channels_out, 4 * channels_in * kernel}),
+                        columns.view({batch_size, groups, 4 * channels_in * kernel, height_out * width_out}));
+
+    // Add bias
+    output = (output.permute({0,3,1,2}) + bias).permute({0,2,3,1});
+
+    return output;
 }
 
 std::vector<torch::Tensor> mm_dcls_2d_backward(
     torch::Tensor im,
     torch::Tensor weights,
     torch::Tensor weights_Ph,
-    torch::Tensor weights_Pw,    
-    torch::Tensor grad,    
-    torch::Tensor P_h, torch::Tensor P_w,     
-    const int dilation_h, const int dilation_w, 
+    torch::Tensor weights_Pw,
+    torch::Tensor grad,
+    torch::Tensor P_h, torch::Tensor P_w,
+    const int dilated_kernel_size_h, const int dilated_kernel_size_w,
     const int padding_h, const int padding_w,
     const int stride_h, const int stride_w,
     const int height_out, const int width_out) {
-    
+
     const int batch_size = im.size(0);
-    const int groups = im.size(1);    
-    
-    // Weights contains the interpolated weights 
-    // weights tensor has a size of groups x 4 x channels_out x channels_in x kernel_h x kernel_w    
+    const int groups = im.size(1);
+
+    // Weights contains the interpolated weights
+    // weights tensor has a size of groups x 4 x channels_out x channels_in x kernel_h x kernel_w
     const int channels_out = weights.select(1,0).size(1);
     const int channels_in = P_h.size(0);
-    const int kernel_h = P_h.size(1);
-    const int kernel_w = P_h.size(2); 
-    
+    const int kernel = P_h.size(1);
+
     // grad_weights is a groups x 4 x channels_out x channels_in * kernel_h * kernel_w  tensor
-    // this intermediate variable will serve to calculate grads with respect to weights, Ph and Pw       
-   
+    // this intermediate variable will serve to calculate grads with respect to weights, Ph and Pw
+
     // Call im2col dcls
-    auto columns = im2col_dcls_2d_batch_cuda(im, P_h, P_w, dilation_h, dilation_w, padding_h, padding_w, 
+    auto columns = im2col_dcls_2d_batch_cuda(im, P_h, P_w, dilated_kernel_size_h, dilated_kernel_size_w, padding_h, padding_w,
                                              stride_h, stride_w, height_out, width_out);
 
     // Apply matrix-matrix multiplication
     auto grad_weights = (at::matmul(grad.unsqueeze(2), columns.permute({0, 1, 2, 4, 3}))).sum(0);
 
     // Sum over interpolations and groups, and take mean value over channels_out of positions
-    auto grad_weight = (grad_weights * weights.view({groups, 4, channels_out, channels_in * kernel_h * kernel_w})).sum(1);
-    auto grad_Ph = (grad_weights * weights_Ph.view({groups, 4, channels_out, channels_in * kernel_h * kernel_w}))
+    auto grad_weight = (grad_weights * weights.view({groups, 4, channels_out, channels_in * kernel})).sum(1);
+    auto grad_Ph = (grad_weights * weights_Ph.view({groups, 4, channels_out, channels_in * kernel}))
                                                                                                   .sum(1).sum(0).mean(0);
-    auto grad_Pw = (grad_weights * weights_Pw.view({groups, 4, channels_out, channels_in * kernel_h * kernel_w}))
+    auto grad_Pw = (grad_weights * weights_Pw.view({groups, 4, channels_out, channels_in * kernel}))
                                                                                                   .sum(1).sum(0).mean(0);
-    
+
     return {grad_weight,
             grad_Ph,
             grad_Pw};
-    
+
 }
