@@ -547,9 +547,9 @@ class Dcls2d(_DclsNd):
             if input.dtype == torch.float32:
                 x = _DepthWiseConv2dImplicitGEMMFP32.apply(
                     input, SD.ConstructKernel2d.apply(weight, P1, P2, self.dilated_kernel_size, self.scaling))
-            elif x.dtype == torch.float16:
+            elif input.dtype == torch.float16:
                 x = _DepthWiseConv2dImplicitGEMMFP16.apply(
-                    input, SD.ConstructKernel2d.apply(weight, P1, P2, self.dilated_kernel_size, self.scaling))
+                    input.contiguous(), SD.ConstructKernel2d.apply(weight, P1, P2, self.dilated_kernel_size, self.scaling))
             else:
                 raise TypeError("Only support fp32 and fp16, get {}".format(x.dtype))
             if self.bias is not None:
