@@ -23,13 +23,11 @@ except ImportError as error:
     # Output expected ImportErrors.
     logging.error(error)
     # Include the name and path attributes in output.
-    logging.errorerror(f'error.name: {error.name}')
-    logging.error(f'error.path: {error.path}')
-    logging.info('switching to native conv2d')
+    logging.warning('switching to native conv2d')
 except Exception as exception:
     # Output unexpected Exceptions.
     logging.error(exception)
-    logging.info('switching to native conv2d')
+    logging.warning('switching to native conv2d')
 
 
 
