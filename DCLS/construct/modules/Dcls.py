@@ -17,7 +17,7 @@ from typing import Optional, List, Tuple
 import operator
 import functools
 import logging
-global is_depthwise_conv2d = False
+global is_depthwise_conv2d
 try:
     from depthwise_conv2d_implicit_gemm import _DepthWiseConv2dImplicitGEMMFP32, _DepthWiseConv2dImplicitGEMMFP16
     is_depthwise_conv2d = True
