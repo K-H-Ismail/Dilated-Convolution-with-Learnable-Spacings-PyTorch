@@ -17,17 +17,21 @@ from typing import Optional, List, Tuple
 import operator
 import functools
 import logging
+global is_depthwise_conv2d = False
 try:
     from depthwise_conv2d_implicit_gemm import _DepthWiseConv2dImplicitGEMMFP32, _DepthWiseConv2dImplicitGEMMFP16
+    is_depthwise_conv2d = True
 except ImportError as error:
     # Output expected ImportErrors.
     logging.error(error)
     # Include the name and path attributes in output.
     logging.warning('switching to native conv2d')
+    is_depthwise_conv2d = False
 except Exception as exception:
     # Output unexpected Exceptions.
     logging.error(exception)
     logging.warning('switching to native conv2d')
+    is_depthwise_conv2d = False
 
 
 
@@ -540,8 +544,9 @@ class Dcls2d(_DclsNd):
             False, _pair(0), groups, bias, padding_mode, scaling)
 
     def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor], P1: Tensor, P2: Tensor):
-        if (self.in_channels == self.out_channels == self.groups
-            and self.padding[0] ==  self.dilated_kernel_size[0] // 2):
+        if (is_depthwise_conv2d and self.in_channels == self.out_channels == self.groups 
+            and self.padding[0] ==  self.dilated_kernel_size[0] // 2 
+            and self.padding[1] ==  self.dilated_kernel_size[1] // 2):
             if input.dtype == torch.float32:
                 x = _DepthWiseConv2dImplicitGEMMFP32.apply(
                     input, SD.ConstructKernel2d.apply(weight, P1, P2, self.dilated_kernel_size, self.scaling))
