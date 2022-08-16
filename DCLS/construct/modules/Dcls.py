@@ -17,21 +17,14 @@ from typing import Optional, List, Tuple
 import operator
 import functools
 import logging
-global is_depthwise_conv2d
+global install_implicit_gemm
 try:
     from depthwise_conv2d_implicit_gemm import _DepthWiseConv2dImplicitGEMMFP32, _DepthWiseConv2dImplicitGEMMFP16
-    is_depthwise_conv2d = True
+    install_implicit_gemm = True
 except ImportError as error:
-    # Output expected ImportErrors.
-    logging.error(error)
-    # Include the name and path attributes in output.
-    logging.warning('switching to native conv2d')
-    is_depthwise_conv2d = False
+    install_implicit_gemm = False
 except Exception as exception:
-    # Output unexpected Exceptions.
-    logging.error(exception)
-    logging.warning('switching to native conv2d')
-    is_depthwise_conv2d = False
+    install_implicit_gemm = False
 
 
 
@@ -171,9 +164,6 @@ class _DclsNd(Module):
             s += ', bias=False'
         if self.padding_mode != 'zeros':
             s += ', padding_mode={padding_mode}'
-        if (self.in_channels == self.out_channels == self.groups
-            and self.padding[0] ==  self.dilated_kernel_size[0] // 2):
-            s += ', (using DepthWiseConv2dImplicitGEMMFP32)'
         return s.format(**self.__dict__)
 
     def __setstate__(self, state):
@@ -534,7 +524,8 @@ class Dcls2d(_DclsNd):
         groups: int = 1,
         bias: bool = True,
         padding_mode: str = 'zeros',  # TODO: refine this type
-        scaling: float = 1.0
+        scaling: float = 1.0,
+        use_implicit_gemm: bool = True
     ):
         stride_ = _pair(stride)
         padding_ = _pair(padding)
@@ -543,10 +534,28 @@ class Dcls2d(_DclsNd):
             in_channels, out_channels, kernel_count, stride_, padding_, dilated_kernel_size_,
             False, _pair(0), groups, bias, padding_mode, scaling)
 
+        self.cond = (self.in_channels == self.out_channels == self.groups
+                and self.padding[0] ==  self.dilated_kernel_size[0] // 2
+                and self.padding[1] ==  self.dilated_kernel_size[1] // 2)
+        if (not install_implicit_gemm) and use_implicit_gemm:
+            logging.warning('DepthWiseConv2dImplicitGEMM not installed')
+        if (not self.cond) and use_implicit_gemm:
+            logging.warning('to use DepthWiseConv2dImplicitGEMM you must have: \n \
+                            (in_channels == out_channels == groups) and (padding == dilated_kernel_size // 2)')
+        if (not install_implicit_gemm) or (not self.cond):
+            logging.warning('switching to native conv2d')
+        self.use_implicit_gemm = use_implicit_gemm and install_implicit_gemm and self.cond
+
+    def extra_repr(self):
+        s = super(Dcls2d, self).extra_repr()
+        if self.use_implicit_gemm:
+            s += ', (using DepthWiseConv2dImplicitGEMM)'
+        else:
+            s += ', (using torch im2col GEMM)'
+        return s.format(**self.__dict__)
+
     def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor], P1: Tensor, P2: Tensor):
-        if (is_depthwise_conv2d and self.in_channels == self.out_channels == self.groups 
-            and self.padding[0] ==  self.dilated_kernel_size[0] // 2 
-            and self.padding[1] ==  self.dilated_kernel_size[1] // 2):
+        if self.use_implicit_gemm:
             if input.dtype == torch.float32:
                 x = _DepthWiseConv2dImplicitGEMMFP32.apply(
                     input, SD.ConstructKernel2d.apply(weight, P1, P2, self.dilated_kernel_size, self.scaling))
