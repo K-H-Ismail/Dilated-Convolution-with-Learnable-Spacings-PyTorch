@@ -31,63 +31,24 @@ From [GitHub](https://github.com/K-H-Ismail/Dilated-Convolution-with-Learnable-S
 ```bash
 git clone https://github.com/K-H-Ismail/Dilated-Convolution-with-Learnable-Spacings-PyTorch.git
 cd Dilated-Convolution-with-Learnable-Spacings-PyTorch
-python ./setup.py install 
+python ./setup.py install --user --no-cache-dir
 ```
-To prevent bad install directory or ```PYTHONPATH```, please use
-```bash 
-export PYTHONPATH=path/to/your/Python-Ver/lib/pythonVer/site-packages/
-python ./setup.py install --prefix=path/to/your/Python-Ver/
-```
+
 
 ## Usage
 Dcls methods could be easily used as a substitue of Pytorch's nn.Conv**n**d classical convolution method:
 
 ```python
-from DCLS.modules.Dcls import Dcls2d
+from DCLS.construct.modules.Dcls import  Dcls2d
 
 # With square kernels, equal stride and dilation
-m = Dcls2d(16, 33, 3, dilation=4, stride=2)
-# non-square kernels and unequal stride and with padding`and dilation
-m = Dcls2d(16, 33, (3, 5), dilation=4, stride=(2, 1), padding=(4, 2))
-# non-square kernels and unequal stride and with padding and dilation
-m = Dcls2d(16, 33, (3, 5), stride=(2, 1), padding=(4, 2), dilation=(3, 2))
-# non-square kernels and unequal stride and with padding and dilation
-m = Dcls2d(16, 33, (3, 5), stride=(2, 1), padding=(4, 2), dilation=(3, 2))
-# With square kernels, equal stride, dilation and a scaling gain for the positions
-m = Dcls2d(16, 33, 3, dilation=4, stride=2, gain=10)
-input = torch.randn(20, 16, 50, 100)
+m = Dcls2d(16, 33, kernel_count=3, dilated_kernel_size=7).cuda()
+input = torch.randn(20, 16, 50, 100).cuda()
 output = m(input)
-
+loss = output.sum()
+loss.backward()
+print(output, m.weight.grad, m.P.grad)
 ```
-__**Note:**__ using ```Dcls2d``` with a ```dilation``` argument of 1 basically amounts to using ```nn.Conv2d```, therfore DCLS should always be used with a dilation > 1.
-
-## Construct and Im2col methods
-The constructive DCLS method presents a performance problem when moving to larger dilations (greater than 7). Indeed, the constructed kernel is largely sparse (it has a sparsity of 1 - 1/(d1 * d2)) and the zeros are effectively taken into account during the convolution leading to great losses of performance in time and memory and this all the more as the dilation is large.
-
-This is why we implemented an alternative method by adapting the im2col algorithm  which aims to speed up the convolution by unrolling the input into a Toepliz matrix and then performing matrix multiplication.
-
-You can use both methods by importing the suitable modules as follows:
-
-```python
-from DCLS.construct.modules.Dcls import  Dcls2d as cDcls2d
-
-# Will construct three (33, 16, (3x4), (3x4)) Tensors for weight, P_h positions and P_w positions 
-m = cDcls2d(16, 33, 3, dilation=4, stride=2, gain=10)
-input = torch.randn(20, 16, 50, 100)
-output = m(input)
-
-```
-
-```python
-from DCLS.modules.Dcls import  Dcls2d 
-
-# Will not construct kernels and will perform im2col algorithm instead 
-m = Dcls2d(16, 33, 3, dilation=4, stride=2, gain=10)
-input = torch.randn(20, 16, 50, 100)
-output = m(input)
-
-```
-__**Note:**__ in the im2col Dcls method the two extra learnable parameters P_h and P_w are of size ```channels_in // group x kernel_h x kernel_w```, while in the construct method they are of size ```channels_out x channels_in // group x kernel_h x kernel_w```
 
 ## Device Supports
 DCLS only supports Nvidia CUDA GPU devices for the moment. The CPU version has not been implemented yet.
