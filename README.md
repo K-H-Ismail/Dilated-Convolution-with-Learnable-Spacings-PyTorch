@@ -18,13 +18,23 @@ The method is described in the arXiv preprint [Dilated Convolution with Learnabl
 
 DCLS is based on PyTorch and CUDA. Please make sure that you have installed all the requirements before you install DCLS.
 
+**Requirements**:
+-   Pytorch version torch>=1.6.0. See [**torch**](https://pytorch.org/).
+-   CUDA support CUDA>=10.0
+-   gcc>=9.1.0
+
+**Preferred versions**:
+```bash
+pip3 install torch==1.8.0+cu111 torchvision==0.9.0+cu111 -f https://download.pytorch.org/whl/torch_stable.html
+```
+
 **Install the latest developing version from the source codes**:
 
 From [GitHub](https://github.com/K-H-Ismail/Dilated-Convolution-with-Learnable-Spacings-PyTorch):
 ```bash
 git clone https://github.com/K-H-Ismail/Dilated-Convolution-with-Learnable-Spacings-PyTorch.git
 cd Dilated-Convolution-with-Learnable-Spacings-PyTorch
-python ./setup.py install --user --no-cache-dir
+python ./setup.py install --user
 ```
 
 **Install the last stable version from** [**PyPI**](https://pypi.org/project/DCLS/):
