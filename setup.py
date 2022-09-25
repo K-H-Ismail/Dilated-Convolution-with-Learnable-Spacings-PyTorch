@@ -19,8 +19,7 @@ def get_extensions():
     else:
         print('Install With CUDA Extension')
     this_dir = os.path.dirname(os.path.abspath(__file__))
-    extensions_dir_construct = os.path.join(this_dir, 'DCLS/construct/src')
-    extensions_dir = os.path.join(this_dir, 'DCLS/src')    
+    extensions_dir_construct = os.path.join(this_dir, 'DCLS/construct/src')   
 
     ext_list_construct = ['dcls_construct_1d',
                           #'dcls_construct_2_1d',                
@@ -29,17 +28,7 @@ def get_extensions():
                           #'dcls_construct_3_2d',                
                           'dcls_construct_3d'
                          ]
-    ext_list = ['dcls_2d',
-                'im2col_dcls_2d',
-                #'rsconv_2d',
-                #'im2col_rsconv_2d'
-                ]
-                #'Distance']    
-    if not sys.platform == 'win32':
-        # win32 does not support cuSparse
-        #ext_list_construct.extend(['spmm', 
-        #                 'sparse_weight_conv'])
-        pass
+    
     extra_compile_args = {'cxx': ['-g'], 'nvcc': ['-use_fast_math']}
     
     extension = CUDAExtension
@@ -47,26 +36,14 @@ def get_extensions():
     ext_modules = list([
         extension(
             ext_name,
-            glob.glob(os.path.join(extensions_dir_construct, ext_name + '.cpp')) + glob.glob(os.path.join(extensions_dir_construct, 'cuda', ext_name + '_cuda_kernel.cu')),
+            glob.glob(os.path.join(extensions_dir_construct, ext_name + '.cpp')) + \
+            glob.glob(os.path.join(extensions_dir_construct, 'cuda', ext_name + '_cuda_kernel.cu')),
             define_macros=define_macros,
             extra_compile_args=extra_compile_args,
             #libraries=[ 'cusparse', 'cusparseLt']            
-        ) for ext_name in ext_list_construct])
-    
-    ext_modules.extend( list([
-        extension(
-            ext_name,
-            glob.glob(os.path.join(extensions_dir, ext_name + '.cpp')) + glob.glob(os.path.join(extensions_dir, 'cuda', ext_name + '_cuda_kernel.cu')),
-            define_macros=define_macros,
-            extra_compile_args=extra_compile_args,
-            #libraries=[ 'cusparse', 'cusparseLt']            
-        ) for ext_name in ext_list]))    
-
+        ) for ext_name in ext_list_construct])  
 
     return ext_modules
-
-with open("./requirements.txt", "r", encoding="utf-8") as fh:
-    install_requires = fh.read()
 
 with open("./README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
