@@ -18,13 +18,6 @@ The method is described in the arXiv preprint [Dilated Convolution with Learnabl
 
 DCLS is based on PyTorch and CUDA. Please make sure that you have installed all the requirements before you install DCLS.
 
-
-**Install the last stable version from** [**PyPI**](https://pypi.org/project/DCLS/):
-
-```bash
-coming soon
-```
-
 **Install the latest developing version from the source codes**:
 
 From [GitHub](https://github.com/K-H-Ismail/Dilated-Convolution-with-Learnable-Spacings-PyTorch):
@@ -34,11 +27,17 @@ cd Dilated-Convolution-with-Learnable-Spacings-PyTorch
 python ./setup.py install --user --no-cache-dir
 ```
 
+**Install the last stable version from** [**PyPI**](https://pypi.org/project/DCLS/):
+
+```bash
+coming soon
+```
 
 ## Usage
 Dcls methods could be easily used as a substitue of Pytorch's nn.Conv**n**d classical convolution method:
 
 ```python
+import torch
 from DCLS.construct.modules.Dcls import  Dcls2d
 
 # With square kernels, equal stride and dilation
@@ -49,6 +48,23 @@ loss = output.sum()
 loss.backward()
 print(output, m.weight.grad, m.P.grad)
 ```
+```python
+import torch
+from DCLS.construct.modules.Dcls import  Dcls1d 
+
+# Will construct kernels of size 7x7 with 3 elements inside each kernel
+m = Dcls1d(3, 16, kernel_count=3, dilated_kernel_size=7).cuda()
+input = torch.rand(8, 3, 32).cuda()
+output = m(input)
+loss = output.sum()
+loss.backward()
+print(output, m.weight.grad, m.P.grad)
+```
+
+**DepthWiseConv2dImplicitGEMM for 2D-DCLS**:
+
+For 2D-DCLS, to install and enable the DepthWiseConv2dImplicitGEMM, please follow the instructions of [RepLKNet](https://github.com/DingXiaoH/RepLKNet-pytorch#use-our-efficient-large-kernel-convolution-with-pytorch). Otherwise, Pytorch's native Conv2D method will be used.
+
 
 ## Device Supports
 DCLS only supports Nvidia CUDA GPU devices for the moment. The CPU version has not been implemented yet.
@@ -57,7 +73,6 @@ DCLS only supports Nvidia CUDA GPU devices for the moment. The CPU version has n
 -   [ ] CPU
 
 Make sure to have your data and model on CUDA GPU.
-DCLS-im2col doesn't support mixed precision operations for now. By default every tensor is converted to have float32 precision.
 
 ## Publications and Citation
 
