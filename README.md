@@ -40,7 +40,7 @@ python ./setup.py install --user
 **Install the last stable version from** [**PyPI**](https://pypi.org/project/DCLS/):
 
 ```bash
-coming soon
+pip3 install DCLS==0.0.1
 ```
 
 ## Usage
