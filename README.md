@@ -13,7 +13,7 @@ For now, the code has only been implemented on [PyTorch](https://pytorch.org/), 
 - [Publications and Citation](#publications-and-citation)
 - [Contribution](#contribution)
 
-The method is described in the arXiv preprint [Dilated Convolution with Learnable Spacings](https://arxiv.org/abs/2112.03740).
+The method is described in the arXiv preprint [Dilated Convolution with Learnable Spacings](https://arxiv.org/abs/2112.03740v2).
 ## Installation
 
 DCLS is based on PyTorch and CUDA. Please make sure that you have installed all the requirements before you install DCLS.
