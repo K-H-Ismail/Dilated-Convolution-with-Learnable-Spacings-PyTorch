@@ -7,6 +7,7 @@ In DCLS, the positions of the weights within the convolutional kernel are learne
 
 For now, the code has only been implemented on [PyTorch](https://pytorch.org/), using Pytorch's C++ API and custom cuda extensions. 
 
+- [What's new](#whats-new)
 - [Installation](#installation)
 - [Usage](#usage)
 - [Device Supports](#device-supports)
@@ -14,6 +15,12 @@ For now, the code has only been implemented on [PyTorch](https://pytorch.org/), 
 - [Contribution](#contribution)
 
 The method is described in the arXiv preprint [Dilated Convolution with Learnable Spacings](https://arxiv.org/abs/2112.03740v2).
+
+## What's new
+
+**Sep 27, 2022**:
+-   Code release for ConvNeXt-dcls experiments. See [**ConvNeXt-dcls**](https://github.com/K-H-Ismail/ConvNeXt-dcls).
+
 ## Installation
 
 DCLS is based on PyTorch and CUDA. Please make sure that you have installed all the requirements before you install DCLS.
