@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "DCLS"
+version = "0.0.2"
+authors = [
+  { name="Ismail Khalfaoui Hassani", email="khalfaoui.ismail@hotmail.com" },
+]
+description = "Dilated convolution with learnable spacings, built on PyTorch."
+readme = "README.md"
+requires-python = ">=3.6"
+classifiers = [
+    "Programming Language :: Python :: 3.6",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/K-H-Ismail/Dilated-Convolution-with-Learnable-Spacings-PyTorch"
+"Bug Tracker" = "https://github.com/K-H-Ismail/Dilated-Convolution-with-Learnable-Spacings-PyTorch/issues"
+
