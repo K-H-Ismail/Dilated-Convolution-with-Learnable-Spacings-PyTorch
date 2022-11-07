@@ -5,7 +5,7 @@ Dilated Convolution with Learnable Spacings (abbreviated to DCLS) is a novel con
 
 In DCLS, the positions of the weights within the convolutional kernel are learned in a gradient-based manner, and the inherent problem of non-differentiability due to the integer nature of the positions in the kernel is solved by taking advantage of an interpolation method. 
 
-For now, the code has only been implemented on [PyTorch](https://pytorch.org/), using Pytorch's C++ API and custom cuda extensions. 
+For now, the code has only been implemented on [PyTorch](https://pytorch.org/), using Pytorch. 
 
 - [What's new](#whats-new)
 - [Installation](#installation)
@@ -18,6 +18,9 @@ The method is described in the arXiv preprint [Dilated Convolution with Learnabl
 
 ## What's new
 
+**Nov 8, 2022**:
+-   Previous branch main is moved to branch cuda, now in main brach we have fully native torch conv{1,2,3}d.
+
 **Sep 27, 2022**:
 -   Code release for ConvNeXt-dcls experiments. See [**ConvNeXt-dcls**](https://github.com/K-H-Ismail/ConvNeXt-dcls).
 
@@ -27,8 +30,6 @@ DCLS is based on PyTorch and CUDA. Please make sure that you have installed all 
 
 **Requirements**:
 -   Pytorch version torch>=1.6.0. See [**torch**](https://pytorch.org/).
--   CUDA support CUDA>=10.0
--   gcc>=9.1.0
 
 **Preferred versions**:
 ```bash
@@ -41,7 +42,10 @@ From [GitHub](https://github.com/K-H-Ismail/Dilated-Convolution-with-Learnable-S
 ```bash
 git clone https://github.com/K-H-Ismail/Dilated-Convolution-with-Learnable-Spacings-PyTorch.git
 cd Dilated-Convolution-with-Learnable-Spacings-PyTorch
-python ./setup.py install --user
+python3 -m pip install --upgrade pip
+python3 -m build 
+python3 -m pip install dist/dcls-0.0.2-py3-none-any.whl 
+
 ```
 
 **Install the last stable version from** [**PyPI**](https://pypi.org/project/DCLS/):
@@ -55,11 +59,11 @@ Dcls methods could be easily used as a substitue of Pytorch's nn.Conv**n**d clas
 
 ```python
 import torch
-from DCLS.construct.modules.Dcls import  Dcls2d
+from DCLS.construct.modules import  Dcls2d
 
 # With square kernels, equal stride and dilation
-m = Dcls2d(16, 33, kernel_count=3, dilated_kernel_size=7).cuda()
-input = torch.randn(20, 16, 50, 100).cuda()
+m = Dcls2d(16, 33, kernel_count=3, dilated_kernel_size=7)
+input = torch.randn(20, 16, 50, 100)
 output = m(input)
 loss = output.sum()
 loss.backward()
@@ -67,11 +71,23 @@ print(output, m.weight.grad, m.P.grad)
 ```
 ```python
 import torch
-from DCLS.construct.modules.Dcls import  Dcls1d 
+from DCLS.construct.modules import  Dcls1d 
 
 # Will construct kernels of size 7x7 with 3 elements inside each kernel
-m = Dcls1d(3, 16, kernel_count=3, dilated_kernel_size=7).cuda()
-input = torch.rand(8, 3, 32).cuda()
+m = Dcls1d(3, 16, kernel_count=3, dilated_kernel_size=7)
+input = torch.rand(8, 3, 32)
+output = m(input)
+loss = output.sum()
+loss.backward()
+print(output, m.weight.grad, m.P.grad)
+```
+
+```python
+import torch
+from DCLS.construct.modules import  Dcls3d
+
+m = Dcls3d(16, 33, kernel_count=10, dilated_kernel_size=(7,8,9))
+input = torch.randn(20, 16, 50, 100, 30)
 output = m(input)
 loss = output.sum()
 loss.backward()
@@ -84,10 +100,10 @@ For 2D-DCLS, to install and enable the DepthWiseConv2dImplicitGEMM, please follo
 
 
 ## Device Supports
-DCLS only supports Nvidia CUDA GPU devices for the moment. The CPU version has not been implemented yet.
+DCLS supports CPU and Nvidia CUDA GPU devices now.
 
 -   [x] Nvidia GPU
--   [ ] CPU
+-   [x] CPU
 
 Make sure to have your data and model on CUDA GPU.
 
