@@ -51,7 +51,7 @@ python3 -m pip install dist/dcls-0.0.2-py3-none-any.whl
 **Install the last stable version from** [**PyPI**](https://pypi.org/project/DCLS/):
 
 ```bash
-coming soon
+pip3 install dcls
 ```
 
 ## Usage
