@@ -19,7 +19,7 @@ The method is described in the arXiv preprint [Dilated Convolution with Learnabl
 ## What's new
 
 **Nov 8, 2022**:
--   Previous branch main is moved to branch cuda, now in main brach we have fully native torch conv{1,2,3}d.
+-   Previous branch main is moved to branch cuda, now in main branch we have fully native torch conv{1,2,3}d.
 
 **Sep 27, 2022**:
 -   Code release for ConvNeXt-dcls experiments. See [**ConvNeXt-dcls**](https://github.com/K-H-Ismail/ConvNeXt-dcls).
