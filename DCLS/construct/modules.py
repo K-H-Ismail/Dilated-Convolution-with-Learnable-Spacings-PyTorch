@@ -164,17 +164,21 @@ class ConstructKernel1d(Module):
         self.groups = groups
         self.dilated_kernel_size = dilated_kernel_size
         self.kernel_count = kernel_count
-        I = torch.arange(0, dilated_kernel_size[0])
-        I = I.expand(out_channels, in_channels//groups, kernel_count,-1).permute(3,0,1,2)
-        self.I = Parameter(I, requires_grad=False)
+        self.I = None
+        self.lim = None
 
-        self.lim = torch.zeros(1)
-        self.lim[0] = dilated_kernel_size[0]
-        self.lim = self.lim.expand(out_channels, in_channels//groups, 
-        			   kernel_count, -1).permute(3,0,1,2)
-        self.lim = Parameter(self.lim, requires_grad=False)
+    def __init_tmp_variables__(self, device):
+        if self.I is None or self.lim is None:
+            I = torch.arange(0, self.dilated_kernel_size[0]).to(device)
+            I = I.expand(self.out_channels, self.in_channels//self.groups, self.kernel_count,-1).permute(3,0,1,2)
+            self.I = I
+            lim = torch.tensor(self.dilated_kernel_size).to(device)
+            self.lim = lim.expand(self.out_channels, self.in_channels//self.groups, self.kernel_count, -1).permute(3,0,1,2)
+        else:
+            pass        
         
-    def forward(self, W, P):        
+    def forward(self, W, P):
+        self.__init_tmp_variables__(W.device)        
         P = P + self.lim // 2
         Pr = P
         P = P.floor()
@@ -207,20 +211,23 @@ class ConstructKernel2d(Module):
         self.groups = groups
         self.dilated_kernel_size = dilated_kernel_size
         self.kernel_count = kernel_count
-        J = torch.arange(0, dilated_kernel_size[0]).expand(dilated_kernel_size[1],-1)
-        I = torch.arange(0, dilated_kernel_size[1]).expand(dilated_kernel_size[0],-1)
-        I = I.expand(out_channels, in_channels//groups, kernel_count,-1,-1).permute(3,4,0,1,2)
-        J = J.expand(out_channels, in_channels//groups, kernel_count,-1,-1).permute(4,3,0,1,2)
+        self.I, self.J = None, None
+        self.lim = None
 
-        self.I = Parameter(I, requires_grad=False)
-        self.J = Parameter(J, requires_grad=False)
-        self.lim = torch.zeros(2)
-        self.lim[0] = dilated_kernel_size[0]; self.lim[1] = dilated_kernel_size[1];
-        self.lim = self.lim.expand(out_channels, in_channels//groups, 
-        			   kernel_count, -1).permute(3,0,1,2)
-        self.lim = Parameter(self.lim, requires_grad=False)
+    def __init_tmp_variables__(self, device):
+        if self.I is None or self.J is None or self.lim is None:
+            J = torch.arange(0, self.dilated_kernel_size[0]).to(device)
+            I = torch.arange(0, self.dilated_kernel_size[1]).to(device)
+            J = J.expand(self.out_channels, self.in_channels//self.groups, self.kernel_count, self.dilated_kernel_size[1],-1).permute(4,3,0,1,2)
+            I = I.expand(self.out_channels, self.in_channels//self.groups, self.kernel_count, self.dilated_kernel_size[0],-1).permute(3,4,0,1,2)            
+            self.I, self.J = I, J
+            lim = torch.tensor(self.dilated_kernel_size).to(device)
+            self.lim = lim.expand(self.out_channels, self.in_channels//self.groups, self.kernel_count, -1).permute(3,0,1,2)
+        else:
+            pass        
         
-    def forward(self, W, P):        
+    def forward(self, W, P):
+        self.__init_tmp_variables__(W.device)        
         P = P + self.lim // 2
         Pr = P
         P = P.floor()
@@ -258,24 +265,28 @@ class ConstructKernel3d(Module):
         self.groups = groups
         self.dilated_kernel_size = dilated_kernel_size
         self.kernel_count = kernel_count
-        L = torch.arange(0,dilated_kernel_size[0]).expand(dilated_kernel_size[1],dilated_kernel_size[2],-1)
-        J = torch.arange(0,dilated_kernel_size[1]).expand(dilated_kernel_size[0],dilated_kernel_size[2],-1)
-        I = torch.arange(0,dilated_kernel_size[2]).expand(dilated_kernel_size[0],dilated_kernel_size[1],-1)
-        L = L.expand(out_channels,in_channels//groups,kernel_count,-1,-1,-1).permute(5,3,4,0,1,2)
-        I = I.expand(out_channels,in_channels//groups,kernel_count,-1,-1,-1).permute(3,4,5,0,1,2)
-        J = J.expand(out_channels,in_channels//groups,kernel_count,-1,-1,-1).permute(3,5,4,0,1,2)
-        self.L = Parameter(L, requires_grad=False)
-        self.I = Parameter(I, requires_grad=False)
-        self.J = Parameter(J, requires_grad=False)
-        self.lim = torch.zeros(3)
-        self.lim[0] = dilated_kernel_size[0] 
-        self.lim[1] = dilated_kernel_size[1]
-        self.lim[2] = dilated_kernel_size[2]
-        self.lim = self.lim.expand(out_channels, in_channels//groups, 
-        			   kernel_count, -1).permute(3,0,1,2)
-        self.lim = Parameter(self.lim, requires_grad=False)
+        self.I, self.J, self.L = None, None, None
+        self.lim = None
+
+    def __init_tmp_variables__(self, device):
+        if self.I is None or self.J is None or self.K is None or self.lim is None:
+            L = torch.arange(0, self.dilated_kernel_size[0]).to(device)
+            J = torch.arange(0, self.dilated_kernel_size[1]).to(device)
+            I = torch.arange(0, self.dilated_kernel_size[2]).to(device)     
+            L = L.expand(self.out_channels,self.in_channels//self.groups,self.kernel_count,
+                         self.dilated_kernel_size[1],self.dilated_kernel_size[2],-1).permute(5,3,4,0,1,2)
+            J = J.expand(self.out_channels,self.in_channels//self.groups,self.kernel_count,
+                         self.dilated_kernel_size[0],self.dilated_kernel_size[2],-1).permute(3,5,4,0,1,2)
+            I = I.expand(self.out_channels,self.in_channels//self.groups,self.kernel_count,
+                         self.dilated_kernel_size[0],self.dilated_kernel_size[1],-1).permute(3,4,5,0,1,2)
+            self.I, self.J, self.L = I, J, L
+            lim = torch.tensor(self.dilated_kernel_size).to(device)
+            self.lim = lim.expand(self.out_channels, self.in_channels//self.groups, self.kernel_count, -1).permute(3,0,1,2)
+        else:
+            pass           
         
-    def forward(self, W, P):        
+    def forward(self, W, P):
+        self.__init_tmp_variables__(W.device)        
         P = P + self.lim // 2
         Pr = P
         P = P.floor()
