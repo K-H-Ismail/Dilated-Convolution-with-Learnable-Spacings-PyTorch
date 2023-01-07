@@ -18,6 +18,15 @@ The method is described in the arXiv preprint [Dilated Convolution with Learnabl
 
 ## What's new
 
+**Jan 7, 2023**:
+-   Important modification to ConstructKernel{1,2,3}d algorithm which allows to use less memory, this modification enables very large kernel counts. For example:
+```python
+from DCLS.construct.modules import  Dcls2d
+
+m = Dcls2d(96, 96, kernel_count=2000, dilated_kernel_size=7, padding=3, groups=96).cuda() 
+```
+After installation of the new version 0.0.3 of DCLS, the use remains unchanged. 
+
 **Nov 8, 2022**:
 -   Previous branch main is moved to branch cuda, now in main branch we have fully native torch conv{1,2,3}d.
 
@@ -69,6 +78,21 @@ loss = output.sum()
 loss.backward()
 print(output, m.weight.grad, m.P.grad)
 ```
+A typical use is with the separable convolution
+
+```python
+import torch
+from DCLS.construct.modules import  Dcls2d
+
+m = Dcls2d(96, 96, kernel_count=34, dilated_kernel_size=17, padding=8, groups=96)
+input = torch.randn(128, 96, 56, 56)
+output = m(input)
+loss = output.sum()
+loss.backward()
+print(output, m.weight.grad, m.P.grad)
+```
+
+Dcls with different dimensions 
 ```python
 import torch
 from DCLS.construct.modules import  Dcls1d 
