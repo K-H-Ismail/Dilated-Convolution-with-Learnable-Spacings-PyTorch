@@ -1,11 +1,11 @@
-[![arXiv](https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg?style=plastic)](https://arxiv.org/abs/2112.03740v2)
+[![arXiv](https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg?style=plastic)](https://arxiv.org/abs/2112.03740v3)
 # Dilated-Convolution-with-Learnable-Spacings-PyTorch
 
 <div align=center>
 <img src='./figs/dcls.png' width=800>
 </div>
 
-This is an official implementation of [Dilated Convolution with Learnable Spacings](https://arxiv.org/abs/2112.03740v2) by Ismail Khalfaoui Hassani, Thomas Pellegrini and Timothée Masquelier.
+This is an official implementation of [Dilated Convolution with Learnable Spacings](https://arxiv.org/abs/2112.03740v3) by Ismail Khalfaoui Hassani, Thomas Pellegrini and Timothée Masquelier.
 
 Dilated Convolution with Learnable Spacings (abbreviated to DCLS) is a novel convolution method based on gradient descent and interpolation. It could be seen as an improvement of the well known dilated convolution that has been widely explored in deep convolutional neural networks and which aims to inflate the convolutional kernel by inserting spaces between the kernel elements. 
 
@@ -20,7 +20,7 @@ For now, the code has only been implemented on [PyTorch](https://pytorch.org/), 
 - [Publications and Citation](#publications-and-citation)
 - [Contribution](#contribution)
 
-The method is described in the arXiv preprint [Dilated Convolution with Learnable Spacings](https://arxiv.org/abs/2112.03740v2).
+The method is described in the arXiv preprint [Dilated Convolution with Learnable Spacings](https://arxiv.org/abs/2112.03740v3).
 
 ## What's new
 
