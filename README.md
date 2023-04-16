@@ -24,6 +24,13 @@ The method is described in the arXiv preprint [Dilated Convolution with Learnabl
 
 ## What's new
 
+**Apr 16, 2023**:
+-   Fix an important bug in Dcls1d version. Please reinstall the pip wheel via 
+```
+pip install --upgrade --force-reinstall dcls
+```
+  or recompile after a git update.
+
 **Jan 7, 2023**:
 -   Important modification to ConstructKernel{1,2,3}d algorithm which allows to use less memory, this modification enables very large kernel counts. For example:
 ```python
