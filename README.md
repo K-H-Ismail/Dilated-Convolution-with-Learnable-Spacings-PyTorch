@@ -27,7 +27,7 @@ The method is described in the arXiv preprint [Dilated Convolution with Learnabl
 **Apr 16, 2023**:
 -   Fix an important bug in Dcls1d version. Please reinstall the pip wheel via 
 ```
-pip install --upgrade --force-reinstall dcls
+pip3 install --upgrade --force-reinstall dcls
 ```
   or recompile after a git update.
 
