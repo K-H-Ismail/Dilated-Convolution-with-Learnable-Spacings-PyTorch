@@ -183,7 +183,7 @@ class ConstructKernel1d(Module):
         Pr = P
         P = P.floor()
         R = (Pr - P).expand(self.dilated_kernel_size[0],-1,-1,-1,-1)
-        R1 = R.select(2,0); P1 = P.select(0,0)       
+        R1 = R.select(1,0); P1 = P.select(0,0)       
         cond1 = (self.I == P1)
         cond2 = (self.I == P1+1)
         W1 = torch.where(cond1, 1.0, 0.0)
