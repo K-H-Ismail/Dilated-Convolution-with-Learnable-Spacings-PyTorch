@@ -1,3 +1,12 @@
+# Copyright 2021 by Ismail Khalfaoui-Hassani, ANITI Toulouse.
+#
+# All rights reserved.
+#
+# This file is part of the Dilated Convolution with Learnable Spacings
+# package (DCLS), and is released under the "MIT License Agreement".
+# Please see the LICENSE file that should have been included as part 
+# of this package.
+
 # coding=utf-8
 import math
 import warnings
