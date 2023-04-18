@@ -7,7 +7,6 @@
 # Please see the LICENSE file that should have been included as part 
 # of this package.
 
-# coding=utf-8
 import math
 import warnings
 
