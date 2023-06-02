@@ -1,4 +1,4 @@
-[![arXiv](https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg?style=plastic)](https://arxiv.org/abs/2112.03740v3)
+[![arXiv](https://img.shields.io/badge/arXiv-2112.03740v4-b31b1b.svg?style=plastic)](https://arxiv.org/abs/2112.03740v4)[![arXiv](https://img.shields.io/badge/arXiv-2306.00817-b31b1b.svg?style=plastic)](https://arxiv.org/abs/2306.00817)
 # Dilated-Convolution-with-Learnable-Spacings-PyTorch
 
 <div align=center>
@@ -20,9 +20,31 @@ For now, the code has only been implemented on [PyTorch](https://pytorch.org/), 
 - [Publications and Citation](#publications-and-citation)
 - [Contribution](#contribution)
 
-The method is described in the arXiv preprint [Dilated Convolution with Learnable Spacings](https://arxiv.org/abs/2112.03740v3).
+The method is described in the article [Dilated Convolution with Learnable Spacings](https://arxiv.org/abs/2112.03740v4). The Gaussian and triangle versions are described in the arXiv preprint [Dilated Convolution with Learnable Spacings: beyond bilinear interpolation](https://arxiv.org/abs/2306.00817).
 
 ## What's new
+
+**Jun 2, 2023**:
+-   New DCLS version supports Gaussian and triangle interpolations in addition to previous bilinear interpolation. To use it, please do:
+```
+pip3 install --upgrade --force-reinstall dcls
+
+```
+  or recompile after a git update.
+  
+```python
+import torch
+from DCLS.construct.modules import  Dcls2d
+
+# Dcls2d with Gaussian interpolation. available versions : ["gauss", "max", "v1", "v0"]
+m = Dcls2d(96, 96, kernel_count=34, dilated_kernel_size=17, padding=8, groups=96, version="gauss")
+input = torch.randn(20, 16, 50, 100)
+output = m(input)
+loss = output.sum()
+loss.backward()
+print(output, m.weight.grad, m.P.grad, m.SIG.grad)
+```  
+- Learning techniques for this method are described in [Dilated Convolution with Learnable Spacings: beyond bilinear interpolation](https://arxiv.org/abs/2306.00817).
 
 **Apr 16, 2023**:
 -   Fix an important bug in Dcls1d version. Please reinstall the pip wheel via 
@@ -149,13 +171,26 @@ Make sure to have your data and model on CUDA GPU.
 If you use DCLS in your work, please consider to cite it as follows:
 
 ```
-@article{khalfaoui2021dilated,
-  title={Dilated convolution with learnable spacings},
-  author={Khalfaoui-Hassani, Ismail and Pellegrini, Thomas and Masquelier, Timoth{\'e}e},
-  journal={arXiv preprint arXiv:2112.03740},
-  year={2021}
+@inproceedings{
+hassani2023dilated,
+title={Dilated convolution with learnable spacings},
+author={Ismail Khalfaoui-Hassani and Thomas Pellegrini and Timoth{\'e}e Masquelier},
+booktitle={The Eleventh International Conference on Learning Representations },
+year={2023},
+url={https://openreview.net/forum?id=Q3-1vRh3HOA}
 }
 
+```
+
+If you use DCLS with Gaussian or triangle interpolations in your work, please consider to cite as well:
+
+```
+@article{khalfaoui2023dilated,
+  title={Dilated convolution with learnable spacings: beyond bilinear interpolation},
+  author={Khalfaoui-Hassani, Ismail and Pellegrini, Thomas and Masquelier, Timoth{\'e}e},
+  journal={arXiv preprint arXiv:2306.00817},
+  year={2023}
+}
 ```
 
 ## Contribution
