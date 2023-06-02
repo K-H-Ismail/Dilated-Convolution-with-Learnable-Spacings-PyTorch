@@ -37,7 +37,7 @@ import torch
 from DCLS.construct.modules import  Dcls2d
 
 # Dcls2d with Gaussian interpolation. available versions : ["gauss", "max", "v1", "v0"]
-m = Dcls2d(96, 96, kernel_count=34, dilated_kernel_size=17, padding=8, groups=96, version="gauss")
+m = Dcls2d(96, 96, kernel_count=26, dilated_kernel_size=17, padding=8, groups=96, version="gauss")
 input = torch.randn(20, 96, 50, 100)
 output = m(input)
 loss = output.sum()
