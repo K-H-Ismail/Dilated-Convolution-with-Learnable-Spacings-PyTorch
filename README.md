@@ -38,7 +38,7 @@ from DCLS.construct.modules import  Dcls2d
 
 # Dcls2d with Gaussian interpolation. available versions : ["gauss", "max", "v1", "v0"]
 m = Dcls2d(96, 96, kernel_count=34, dilated_kernel_size=17, padding=8, groups=96, version="gauss")
-input = torch.randn(20, 16, 50, 100)
+input = torch.randn(20, 96, 50, 100)
 output = m(input)
 loss = output.sum()
 loss.backward()
@@ -88,7 +88,7 @@ git clone https://github.com/K-H-Ismail/Dilated-Convolution-with-Learnable-Spaci
 cd Dilated-Convolution-with-Learnable-Spacings-PyTorch
 python3 -m pip install --upgrade pip
 python3 -m build 
-python3 -m pip install dist/dcls-0.0.4-py3-none-any.whl 
+python3 -m pip install dist/dcls-0.0.5-py3-none-any.whl 
 
 ```
 
