@@ -24,6 +24,12 @@ The method is described in the article [Dilated Convolution with Learnable Spaci
 
 ## What's new
 
+
+**Jun 16, 2023**:
+-   A new tutorial on how to use DCLS in vision backbones is now available:
+[DCLS Vision Tutorial](https://github.com/K-H-Ismail/Dilated-Convolution-with-Learnable-Spacings-PyTorch/blob/main/tutorials/DCLS_Vision_Tutorial.ipynb).
+-   A short blog post which summarizes the DCLS method has been published in Medium: [What is Dilated Convolution with Learnable Spacings (DCLS) and how to use it ?](https://medium.com/@khalfaoui.ismail/dea93c490a82).
+
 **Jun 2, 2023**:
 -   New DCLS version supports Gaussian and triangle interpolations in addition to previous bilinear interpolation. To use it, please do:
 ```
