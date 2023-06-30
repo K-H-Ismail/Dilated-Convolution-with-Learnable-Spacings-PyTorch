@@ -4,7 +4,7 @@
 #
 # This file is part of the Dilated Convolution with Learnable Spacings
 # package (DCLS), and is released under the "MIT License Agreement".
-# Please see the LICENSE file that should have been included as part 
+# Please see the LICENSE file that should have been included as part
 # of this package.
 
 import math
@@ -113,7 +113,9 @@ class _DclsNd(Module):
             self.weight = Parameter(torch.Tensor(
                 in_channels, out_channels // groups, kernel_count))
             self.P = Parameter(torch.Tensor(len(dilated_kernel_size), in_channels,
-                                            out_channels // groups, kernel_count))
+                                            out_channels // groups,
+                                            kernel_count),
+                              requires_grad = version not in ['brownian'])
             if version in ['gauss', 'max']:
                 self.SIG = Parameter(torch.Tensor(len(dilated_kernel_size), in_channels,
                                                 out_channels // groups, kernel_count))
@@ -123,7 +125,9 @@ class _DclsNd(Module):
             self.weight = Parameter(torch.Tensor(
                 out_channels, in_channels // groups, kernel_count))
             self.P = Parameter(torch.Tensor(len(dilated_kernel_size),
-                                            out_channels, in_channels // groups, kernel_count))
+                                            out_channels, in_channels //
+                                            groups, kernel_count),
+                                requires_grad = version not in ['brownian'])
             if version in ['gauss', 'max']:
                 self.SIG = Parameter(torch.Tensor(len(dilated_kernel_size), out_channels,
                     in_channels // groups, kernel_count))
@@ -199,12 +203,13 @@ class ConstructKernel1d(Module):
             IDX = IDX.expand(self.out_channels, self.in_channels//self.groups, self.kernel_count, -1, -1).permute(4,3,0,1,2)
             self.IDX = IDX
             lim = torch.tensor(self.dilated_kernel_size).to(device)
+            lim = lim.div(2, rounding_mode='floor')
             self.lim = lim.expand(self.out_channels, self.in_channels//self.groups, self.kernel_count, -1).permute(3,0,1,2)
         else:
             pass
 
     def forward_v0(self, W, P):
-        P = P + self.lim // 2
+        P = P + self.lim
         Pr = P
         P = P.floor()
         R = (Pr - P).expand(self.dilated_kernel_size[0],-1,-1,-1,-1)
@@ -220,7 +225,7 @@ class ConstructKernel1d(Module):
         return K
 
     def forward_v1(self, W, P):
-        P = P + self.lim // 2
+        P = P + self.lim
         X = (self.IDX - P)
         X = ((1 - X.abs()).relu()).prod(1)
         X  = X / (X.sum(0) + 1e-7) # normalization
@@ -229,7 +234,7 @@ class ConstructKernel1d(Module):
         return K
 
     def forward_vmax(self, W, P, SIG):
-        P = P + self.lim // 2
+        P = P + self.lim
         SIG = SIG.abs() + 1.0
         X = (self.IDX - P)
         X = ((SIG - X.abs()).relu()).prod(1)
@@ -239,7 +244,7 @@ class ConstructKernel1d(Module):
         return K
 
     def forward_vgauss(self, W, P, SIG):
-        P = P + self.lim // 2
+        P = P + self.lim
         SIG = SIG.abs() + 0.27
         X = ((self.IDX - P) / SIG).norm(2, dim=1)
         X = (-0.5 * X**2).exp()
@@ -291,12 +296,13 @@ class ConstructKernel2d(Module):
             IDX = IDX.expand(self.out_channels, self.in_channels//self.groups, self.kernel_count,-1,-1,-1).permute(4,5,3,0,1,2)
             self.IDX = IDX
             lim = torch.tensor(self.dilated_kernel_size).to(device)
+            lim = lim.div(2, rounding_mode='floor')
             self.lim = lim.expand(self.out_channels, self.in_channels//self.groups, self.kernel_count, -1).permute(3,0,1,2)
         else:
             pass
 
     def forward_v0(self, W, P):
-        P = P + self.lim // 2
+        P = P + self.lim
         Pr = P
         P = P.floor()
         R = (Pr - P).expand(self.dilated_kernel_size[0], self.dilated_kernel_size[1],-1,-1,-1,-1)
@@ -318,7 +324,7 @@ class ConstructKernel2d(Module):
         return K
 
     def forward_v1(self, W, P):
-        P = P + self.lim // 2
+        P = P + self.lim
         X = (self.IDX - P)
         X = ((1 - X.abs()).relu()).prod(2)
         X  = X / (X.sum((0,1)) + 1e-7) # normalization
@@ -327,7 +333,7 @@ class ConstructKernel2d(Module):
         return K
 
     def forward_vmax(self, W, P, SIG):
-        P = P + self.lim // 2
+        P = P + self.lim
         SIG = SIG.abs() + 1.0
         X = (self.IDX - P)
         X = ((SIG - X.abs()).relu()).prod(2)
@@ -337,7 +343,7 @@ class ConstructKernel2d(Module):
         return K
 
     def forward_vgauss(self, W, P, SIG):
-        P = P + self.lim // 2
+        P = P + self.lim
         SIG = SIG.abs() + 0.27
         X = ((self.IDX - P) / SIG).norm(2, dim=2)
         X = (-0.5 * X**2).exp()
@@ -392,12 +398,13 @@ class ConstructKernel3d(Module):
                              -1,-1,-1,-1).permute(4,5,6,3,0,1,2)
             self.IDX = IDX
             lim = torch.tensor(self.dilated_kernel_size).to(device)
+            lim = lim.div(2, rounding_mode='floor')
             self.lim = lim.expand(self.out_channels, self.in_channels//self.groups, self.kernel_count, -1).permute(3,0,1,2)
         else:
             pass
 
     def forward_v0(self, W, P):
-        P = P + self.lim // 2
+        P = P + self.lim
         Pr = P
         P = P.floor()
         R = (Pr - P).expand(self.dilated_kernel_size[0], self.dilated_kernel_size[1], self.dilated_kernel_size[2],-1,-1,-1,-1)
@@ -437,7 +444,7 @@ class ConstructKernel3d(Module):
         return K
 
     def forward_v1(self, W, P):
-        P = P + self.lim // 2
+        P = P + self.lim
         X = (self.IDX - P)
         X = ((1 - X.abs()).relu()).prod(3)
         X  = X / (X.sum((0,1,2)) + 1e-7) # normalization
@@ -446,7 +453,7 @@ class ConstructKernel3d(Module):
         return K
 
     def forward_vmax(self, W, P, SIG):
-        P = P + self.lim // 2
+        P = P + self.lim
         SIG = SIG.abs() + 1.0
         X = (self.IDX - P)
         X = ((SIG - X.abs()).relu()).prod(3)
@@ -456,7 +463,7 @@ class ConstructKernel3d(Module):
         return K
 
     def forward_vgauss(self, W, P, SIG):
-        P = P + self.lim // 2
+        P = P + self.lim
         SIG = SIG.abs() + 0.27
         X = ((self.IDX - P) / SIG).norm(2, dim=3)
         X = (-0.5 * X**2).exp()
@@ -547,7 +554,8 @@ class Dcls1d(_DclsNd):
                                      self.groups,
                                      self.kernel_count,
                                      self.dilated_kernel_size,
-                                     self.version)
+                                     self.version if self.version not in
+                                     ['brownian'] else 'v1')
     def extra_repr(self):
         s = super(Dcls1d, self).extra_repr()
         return s.format(**self.__dict__)
@@ -561,6 +569,9 @@ class Dcls1d(_DclsNd):
                                    self.stride, self.padding, _single(1), self.groups)
 
     def forward(self, input: Tensor) -> Tensor:
+            if self.version in ['brownian']:
+                with torch.no_grad():
+                    self.P += torch.rand_like(self.P)
             return self._conv_forward(input, self.weight, self.bias, self.P, self.SIG)
 
 class Dcls2d(_DclsNd):
@@ -685,7 +696,15 @@ class Dcls2d(_DclsNd):
                                      self.groups,
                                      self.kernel_count,
                                      self.dilated_kernel_size,
-                                     self.version)
+                                     self.version if self.version not in
+                                     ['brownian'] else 'v1')
+        def brownian_hook_fn(module, input, output):
+            with torch.no_grad():
+                module.P += (torch.randn_like(module.P) / 1e4)
+
+        if self.version in ['brownian']:
+            self.register_full_backward_hook(brownian_hook_fn)
+
     def extra_repr(self):
         s = super(Dcls2d, self).extra_repr()
         if self.use_implicit_gemm:
@@ -766,7 +785,6 @@ class Dcls3d(_DclsNd):
         https://github.com/vdumoulin/conv_arithmetic/blob/master/README.md
     """
 
-
     def __init__(
         self,
         in_channels: int,
@@ -792,7 +810,8 @@ class Dcls3d(_DclsNd):
                                      self.groups,
                                      self.kernel_count,
                                      self.dilated_kernel_size,
-                                     self.version)
+                                     self.version if self.version not in
+                                     ['brownian'] else 'v1')
     def extra_repr(self):
         s = super(Dcls3d, self).extra_repr()
         return s.format(**self.__dict__)
@@ -806,4 +825,7 @@ class Dcls3d(_DclsNd):
                                    self.stride, self.padding, _triple(1), self.groups)
 
     def forward(self, input: Tensor) -> Tensor:
+            if self.version in ['brownian']:
+                with torch.no_grad():
+                    self.P += torch.rand_like(self.P)
             return self._conv_forward(input, self.weight, self.bias, self.P, self.SIG)
