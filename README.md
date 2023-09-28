@@ -1,6 +1,6 @@
 [![arXiv](https://img.shields.io/badge/arXiv-2112.03740v4-b31b1b.svg?style=plastic)](https://arxiv.org/abs/2112.03740v4)
 [![arXiv](https://img.shields.io/badge/arXiv-2306.00817v2-b31b1b.svg?style=plastic)](https://arxiv.org/abs/2306.00817v2)
-[![medium](https://img.shields.io/badge/Medium-12100E?style=plastic)](https:medium.com/@khalfaoui.ismail/dea93c490a82)
+[![medium](https://img.shields.io/badge/Medium-12100E?style=plastic)](https://medium.com/@khalfaoui.ismail/dea93c490a82)
 [![colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1nr2zF-Zw8QRuKN68Mfdw5uCtznBa-UpM?usp=sharing) 
 # Dilated-Convolution-with-Learnable-Spacings-PyTorch
 
@@ -36,7 +36,7 @@ The method is described in the article [Dilated Convolution with Learnable Spaci
 **Jun 16, 2023**:
 -   A new tutorial on how to use DCLS in vision backbones is now available:
 [DCLS Vision Tutorial](https://github.com/K-H-Ismail/Dilated-Convolution-with-Learnable-Spacings-PyTorch/blob/main/tutorials/DCLS_Vision_Tutorial.ipynb) [![colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1nr2zF-Zw8QRuKN68Mfdw5uCtznBa-UpM?usp=sharing). 
--   A short blog post which summarizes the DCLS method has been published in Medium: [What is Dilated Convolution with Learnable Spacings (DCLS) and how to use it ?](https://medium.com/@khalfaoui.ismail/dea93c490a82) [![medium](https://img.shields.io/badge/Medium-12100E?style=plastic)](https:medium.com/@khalfaoui.ismail/dea93c490a82).
+-   A short blog post which summarizes the DCLS method has been published in Medium: [What is Dilated Convolution with Learnable Spacings (DCLS) and how to use it ?](https://medium.com/@khalfaoui.ismail/dea93c490a82) [![medium](https://img.shields.io/badge/Medium-12100E?style=plastic)](https://medium.com/@khalfaoui.ismail/dea93c490a82).
 
 **Jun 2, 2023**:
 -   New DCLS version supports Gaussian and triangle interpolations in addition to previous bilinear interpolation. To use it, please do:
