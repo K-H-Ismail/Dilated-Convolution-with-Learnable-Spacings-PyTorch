@@ -1,11 +1,14 @@
-[![arXiv](https://img.shields.io/badge/arXiv-2112.03740v4-b31b1b.svg?style=plastic)](https://arxiv.org/abs/2112.03740v4)[![arXiv](https://img.shields.io/badge/arXiv-2306.00817-b31b1b.svg?style=plastic)](https://arxiv.org/abs/2306.00817)
+[![arXiv](https://img.shields.io/badge/arXiv-2112.03740v4-b31b1b.svg?style=plastic)](https://arxiv.org/abs/2112.03740v4)
+[![arXiv](https://img.shields.io/badge/arXiv-2306.00817v2-b31b1b.svg?style=plastic)](https://arxiv.org/abs/2306.00817v2)
+[![medium](https://img.shields.io/badge/Medium-12100E?style=plastic)](https:medium.com/@khalfaoui.ismail/dea93c490a82)
+[![colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1nr2zF-Zw8QRuKN68Mfdw5uCtznBa-UpM?usp=sharing) 
 # Dilated-Convolution-with-Learnable-Spacings-PyTorch
 
 <div align=center>
 <img src='./figs/dcls.png' width=800>
 </div>
 
-This is an official implementation of [Dilated Convolution with Learnable Spacings](https://arxiv.org/abs/2112.03740v3) by Ismail Khalfaoui Hassani, Thomas Pellegrini and Timothée Masquelier.
+This is an official implementation of [Dilated Convolution with Learnable Spacings](https://arxiv.org/abs/2112.03740v4) by Ismail Khalfaoui Hassani, Thomas Pellegrini and Timothée Masquelier.
 
 Dilated Convolution with Learnable Spacings (abbreviated to DCLS) is a novel convolution method based on gradient descent and interpolation. It could be seen as an improvement of the well known dilated convolution that has been widely explored in deep convolutional neural networks and which aims to inflate the convolutional kernel by inserting spaces between the kernel elements. 
 
@@ -20,15 +23,20 @@ For now, the code has only been implemented on [PyTorch](https://pytorch.org/), 
 - [Publications and Citation](#publications-and-citation)
 - [Contribution](#contribution)
 
-The method is described in the article [Dilated Convolution with Learnable Spacings](https://arxiv.org/abs/2112.03740v4). The Gaussian and triangle versions are described in the arXiv preprint [Dilated Convolution with Learnable Spacings: beyond bilinear interpolation](https://arxiv.org/abs/2306.00817).
+The method is described in the article [Dilated Convolution with Learnable Spacings](https://arxiv.org/abs/2112.03740v4). The Gaussian and triangle versions are described in the arXiv preprint [Dilated Convolution with Learnable Spacings: beyond bilinear interpolation](https://arxiv.org/abs/2306.00817v2).
 
 ## What's new
+**Sep 28, 2023**:
+- 🚀 🚀 A new repository for audio classification on AudioSet using DCLS and with state-of-the-art vision models adapted to audio spectrograms. Please checkout the git repo 
+[DCLS Audio](https://github.com/K-H-Ismail/DCLS-Audio) and / or the paper [Audio classification with Dilated Convolution with Learnable Spacings](https://arxiv.org/abs/2309.13972) [![arXiv](https://img.shields.io/badge/arXiv-2309.13972-b31b1b.svg?style=plastic)](https://arxiv.org/abs/2309.13972). Models checkpoints are available !
 
+**Sep 22, 2023**:
+- 🎉 🎉 The paper on DCLS Gaussian interpolation [Dilated Convolution with Learnable Spacings: beyond bilinear interpolation](https://arxiv.org/abs/2306.00817v2) [![arXiv](https://img.shields.io/badge/arXiv-2306.00817v2-b31b1b.svg?style=plastic)](https://arxiv.org/abs/2306.00817v2) has been published at [the Differentiable Almost Everything Workshop of the 40th International Conference on Machine Learning](https://differentiable.xyz/) [[ICML2023]](https://icml.cc/Conferences/2023).
 
 **Jun 16, 2023**:
 -   A new tutorial on how to use DCLS in vision backbones is now available:
-[DCLS Vision Tutorial](https://github.com/K-H-Ismail/Dilated-Convolution-with-Learnable-Spacings-PyTorch/blob/main/tutorials/DCLS_Vision_Tutorial.ipynb).
--   A short blog post which summarizes the DCLS method has been published in Medium: [What is Dilated Convolution with Learnable Spacings (DCLS) and how to use it ?](https://medium.com/@khalfaoui.ismail/dea93c490a82).
+[DCLS Vision Tutorial](https://github.com/K-H-Ismail/Dilated-Convolution-with-Learnable-Spacings-PyTorch/blob/main/tutorials/DCLS_Vision_Tutorial.ipynb) [![colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1nr2zF-Zw8QRuKN68Mfdw5uCtznBa-UpM?usp=sharing). 
+-   A short blog post which summarizes the DCLS method has been published in Medium: [What is Dilated Convolution with Learnable Spacings (DCLS) and how to use it ?](https://medium.com/@khalfaoui.ismail/dea93c490a82) [![medium](https://img.shields.io/badge/Medium-12100E?style=plastic)](https:medium.com/@khalfaoui.ismail/dea93c490a82).
 
 **Jun 2, 2023**:
 -   New DCLS version supports Gaussian and triangle interpolations in addition to previous bilinear interpolation. To use it, please do:
@@ -191,11 +199,13 @@ url={https://openreview.net/forum?id=Q3-1vRh3HOA}
 If you use DCLS with Gaussian or triangle interpolations in your work, please consider to cite as well:
 
 ```
-@article{khalfaoui2023dilated,
-  title={Dilated convolution with learnable spacings: beyond bilinear interpolation},
-  author={Khalfaoui-Hassani, Ismail and Pellegrini, Thomas and Masquelier, Timoth{\'e}e},
-  journal={arXiv preprint arXiv:2306.00817},
-  year={2023}
+@inproceedings{
+khalfaoui-hassani2023dilated,
+title={Dilated Convolution with Learnable Spacings: beyond bilinear interpolation},
+author={Ismail Khalfaoui-Hassani and Thomas Pellegrini and Timoth{\'e}e Masquelier},
+booktitle={ICML 2023 Workshop on Differentiable Almost Everything: Differentiable Relaxations, Algorithms, Operators, and Simulators},
+year={2023},
+url={https://openreview.net/forum?id=j8FPBCltB9}
 }
 ```
 
