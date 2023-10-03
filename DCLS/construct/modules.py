@@ -300,8 +300,8 @@ class ConstructKernel2d(Module):
         Pr = P
         P = P.floor()
         R = (Pr - P).expand(self.dilated_kernel_size[0], self.dilated_kernel_size[1],-1,-1,-1,-1)
-        R1 = R.select(2,0); P1 = P.select(0,0); I = self.IDX.select(2,0)
-        R2 = R.select(2,1); P2 = P.select(0,1); J = self.IDX.select(2,1)
+        R1 = R.select(2,0); P1 = P.select(0,0); I = self.IDX.select(2,1)
+        R2 = R.select(2,1); P2 = P.select(0,1); J = self.IDX.select(2,0)
         R1R2 = R1*R2
         cond1 = (I == P1)
         cond2 = (J == P2)
