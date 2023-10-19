@@ -4,7 +4,7 @@
 #
 # This file is part of the Dilated Convolution with Learnable Spacings
 # package (DCLS), and is released under the "MIT License Agreement".
-# Please see the LICENSE file that should have been included as part 
+# Please see the LICENSE file that should have been included as part
 # of this package.
 
 import math
@@ -20,17 +20,22 @@ from torch.nn.modules.utils import _single, _pair, _triple, _reverse_repeat_tupl
 from torch.nn.common_types import _size_1_t, _size_2_t, _size_3_t
 from typing import Optional, List, Tuple
 import logging
+
 global install_implicit_gemm
 try:
-    from depthwise_conv2d_implicit_gemm import _DepthWiseConv2dImplicitGEMMFP32, _DepthWiseConv2dImplicitGEMMFP16
+    from depthwise_conv2d_implicit_gemm import (
+        _DepthWiseConv2dImplicitGEMMFP32,
+        _DepthWiseConv2dImplicitGEMMFP16,
+    )
+
     install_implicit_gemm = True
 except ImportError as error:
     install_implicit_gemm = False
 except Exception as exception:
     install_implicit_gemm = False
 
-convolution_notes = \
-    {"groups_note": r"""* :attr:`groups` controls the connections between inputs and outputs.
+convolution_notes = {
+    "groups_note": r"""* :attr:`groups` controls the connections between inputs and outputs.
       :attr:`in_channels` and :attr:`out_channels` must both be divisible by
       :attr:`groups`. For example,
         * At groups=1, all inputs are convolved to all outputs.
@@ -41,21 +46,33 @@ convolution_notes = \
         * At groups= :attr:`in_channels`, each input channel is convolved with
           its own set of filters (of size
           :math:`\frac{\text{out\_channels}}{\text{in\_channels}}`).""",
-
-        "depthwise_separable_note": r"""When `groups == in_channels` and `out_channels == K * in_channels`,
+    "depthwise_separable_note": r"""When `groups == in_channels` and `out_channels == K * in_channels`,
         where `K` is a positive integer, this operation is also known as a "depthwise convolution".
         In other words, for an input of size :math:`(N, C_{in}, L_{in})`,
         a depthwise convolution with a depthwise multiplier `K` can be performed with the arguments
-        :math:`(C_\text{in}=C_\text{in}, C_\text{out}=C_\text{in} \times \text{K}, ..., \text{groups}=C_\text{in})`."""}  # noqa: B950
+        :math:`(C_\text{in}=C_\text{in}, C_\text{out}=C_\text{in} \times \text{K}, ..., \text{groups}=C_\text{in})`.""",
+}  # noqa: B950
+
 
 class _DclsNd(Module):
 
-    __constants__ = ['stride', 'padding', 'dilated_kernel_size', 'groups',
-                     'padding_mode', 'output_padding', 'in_channels',
-                     'out_channels', 'kernel_count', 'version']
-    __annotations__ = {'bias': Optional[torch.Tensor]}
+    __constants__ = [
+        "stride",
+        "padding",
+        "dilated_kernel_size",
+        "groups",
+        "padding_mode",
+        "output_padding",
+        "in_channels",
+        "out_channels",
+        "kernel_count",
+        "version",
+    ]
+    __annotations__ = {"bias": Optional[torch.Tensor]}
 
-    def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor]) -> Tensor:
+    def _conv_forward(
+        self, input: Tensor, weight: Tensor, bias: Optional[Tensor]
+    ) -> Tensor:
         ...
 
     _in_channels: int
@@ -71,28 +88,33 @@ class _DclsNd(Module):
     weight: Tensor
     bias: Optional[Tensor]
 
-    def __init__(self,
-                 in_channels: int,
-                 out_channels: int,
-                 kernel_count: int,
-                 stride: Tuple[int, ...],
-                 padding: Tuple[int, ...],
-                 dilated_kernel_size: Tuple[int, ...],
-                 transposed: bool,
-                 output_padding: Tuple[int, ...],
-                 groups: int,
-                 bias: bool,
-                 padding_mode: str,
-                 version: str) -> None:
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_count: int,
+        stride: Tuple[int, ...],
+        padding: Tuple[int, ...],
+        dilated_kernel_size: Tuple[int, ...],
+        transposed: bool,
+        output_padding: Tuple[int, ...],
+        groups: int,
+        bias: bool,
+        padding_mode: str,
+        version: str,
+    ) -> None:
         super(_DclsNd, self).__init__()
         if in_channels % groups != 0:
-            raise ValueError('in_channels must be divisible by groups')
+            raise ValueError("in_channels must be divisible by groups")
         if out_channels % groups != 0:
-            raise ValueError('out_channels must be divisible by groups')
-        valid_padding_modes = {'zeros', 'reflect', 'replicate', 'circular'}
+            raise ValueError("out_channels must be divisible by groups")
+        valid_padding_modes = {"zeros", "reflect", "replicate", "circular"}
         if padding_mode not in valid_padding_modes:
-            raise ValueError("padding_mode must be one of {}, but got padding_mode='{}'".format(
-                valid_padding_modes, padding_mode))
+            raise ValueError(
+                "padding_mode must be one of {}, but got padding_mode='{}'".format(
+                    valid_padding_modes, padding_mode
+                )
+            )
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.kernel_count = kernel_count
@@ -110,29 +132,55 @@ class _DclsNd(Module):
         # reverse order than the dimension.
         self._reversed_padding_repeated_twice = _reverse_repeat_tuple(self.padding, 2)
         if transposed:
-            self.weight = Parameter(torch.Tensor(
-                in_channels, out_channels // groups, kernel_count))
-            self.P = Parameter(torch.Tensor(len(dilated_kernel_size), in_channels,
-                                            out_channels // groups, kernel_count))
-            if version in ['gauss', 'max']:
-                self.SIG = Parameter(torch.Tensor(len(dilated_kernel_size), in_channels,
-                                                out_channels // groups, kernel_count))
+            self.weight = Parameter(
+                torch.Tensor(in_channels, out_channels // groups, kernel_count)
+            )
+            self.P = Parameter(
+                torch.Tensor(
+                    len(dilated_kernel_size),
+                    in_channels,
+                    out_channels // groups,
+                    kernel_count,
+                )
+            )
+            if version in ["gauss", "max"]:
+                self.SIG = Parameter(
+                    torch.Tensor(
+                        len(dilated_kernel_size),
+                        in_channels,
+                        out_channels // groups,
+                        kernel_count,
+                    )
+                )
             else:
-                self.register_parameter('SIG', None)
+                self.register_parameter("SIG", None)
         else:
-            self.weight = Parameter(torch.Tensor(
-                out_channels, in_channels // groups, kernel_count))
-            self.P = Parameter(torch.Tensor(len(dilated_kernel_size),
-                                            out_channels, in_channels // groups, kernel_count))
-            if version in ['gauss', 'max']:
-                self.SIG = Parameter(torch.Tensor(len(dilated_kernel_size), out_channels,
-                    in_channels // groups, kernel_count))
+            self.weight = Parameter(
+                torch.Tensor(out_channels, in_channels // groups, kernel_count)
+            )
+            self.P = Parameter(
+                torch.Tensor(
+                    len(dilated_kernel_size),
+                    out_channels,
+                    in_channels // groups,
+                    kernel_count,
+                )
+            )
+            if version in ["gauss", "max"]:
+                self.SIG = Parameter(
+                    torch.Tensor(
+                        len(dilated_kernel_size),
+                        out_channels,
+                        in_channels // groups,
+                        kernel_count,
+                    )
+                )
             else:
-                self.register_parameter('SIG', None)
+                self.register_parameter("SIG", None)
         if bias:
             self.bias = Parameter(torch.empty(out_channels))
         else:
-            self.register_parameter('bias', None)
+            self.register_parameter("bias", None)
 
         self.reset_parameters()
 
@@ -145,9 +193,9 @@ class _DclsNd(Module):
         with torch.no_grad():
             for i in range(len(self.dilated_kernel_size)):
                 lim = self.dilated_kernel_size[i] // 2
-                init.normal_(self.P.select(0,i), 0, 0.5).clamp_(-lim, lim)
+                init.normal_(self.P.select(0, i), 0, 0.5).clamp_(-lim, lim)
             if self.SIG is not None:
-                if self.version == 'gauss':
+                if self.version == "gauss":
                     init.constant_(self.SIG, 0.23)
                 else:
                     init.constant_(self.SIG, 0.0)
@@ -156,32 +204,43 @@ class _DclsNd(Module):
         for i in range(len(self.dilated_kernel_size)):
             with torch.no_grad():
                 lim = self.dilated_kernel_size[i] // 2
-                self.P.select(0,i).clamp_(-lim, lim)
+                self.P.select(0, i).clamp_(-lim, lim)
 
     def extra_repr(self):
-        s = ('{in_channels}, {out_channels}, kernel_count={kernel_count} (previous kernel_size)'
-             ', stride={stride}, version={version}')
+        s = (
+            "{in_channels}, {out_channels}, kernel_count={kernel_count} (previous kernel_size)"
+            ", stride={stride}, version={version}"
+        )
         if self.padding != (0,) * len(self.padding):
-            s += ', padding={padding}'
+            s += ", padding={padding}"
         if self.dilated_kernel_size != (1,) * len(self.dilated_kernel_size):
-            s += ', dilated_kernel_size={dilated_kernel_size} (learnable)'
+            s += ", dilated_kernel_size={dilated_kernel_size} (learnable)"
         if self.output_padding != (0,) * len(self.output_padding):
-            s += ', output_padding={output_padding}'
+            s += ", output_padding={output_padding}"
         if self.groups != 1:
-            s += ', groups={groups}'
+            s += ", groups={groups}"
         if self.bias is None:
-            s += ', bias=False'
-        if self.padding_mode != 'zeros':
-            s += ', padding_mode={padding_mode}'
+            s += ", bias=False"
+        if self.padding_mode != "zeros":
+            s += ", padding_mode={padding_mode}"
         return s.format(**self.__dict__)
 
     def __setstate__(self, state):
         super(_DclsNd, self).__setstate__(state)
-        if not hasattr(self, 'padding_mode'):
-            self.padding_mode = 'zeros'
+        if not hasattr(self, "padding_mode"):
+            self.padding_mode = "zeros"
+
 
 class ConstructKernel1d(Module):
-    def __init__(self, out_channels, in_channels, groups, kernel_count, dilated_kernel_size, version):
+    def __init__(
+        self,
+        out_channels,
+        in_channels,
+        groups,
+        kernel_count,
+        dilated_kernel_size,
+        version,
+    ):
         super().__init__()
         self.version = version
         self.out_channels = out_channels
@@ -194,12 +253,25 @@ class ConstructKernel1d(Module):
 
     def __init_tmp_variables__(self, device):
         if self.IDX is None or self.lim is None:
-            I = Parameter(torch.arange(0, self.dilated_kernel_size[0]), requires_grad=False).to(device)
+            I = Parameter(
+                torch.arange(0, self.dilated_kernel_size[0]), requires_grad=False
+            ).to(device)
             IDX = I.unsqueeze(0)
-            IDX = IDX.expand(self.out_channels, self.in_channels//self.groups, self.kernel_count, -1, -1).permute(4,3,0,1,2)
+            IDX = IDX.expand(
+                self.out_channels,
+                self.in_channels // self.groups,
+                self.kernel_count,
+                -1,
+                -1,
+            ).permute(4, 3, 0, 1, 2)
             self.IDX = IDX
             lim = torch.tensor(self.dilated_kernel_size).to(device)
-            self.lim = lim.expand(self.out_channels, self.in_channels//self.groups, self.kernel_count, -1).permute(3,0,1,2)
+            self.lim = lim.expand(
+                self.out_channels,
+                self.in_channels // self.groups,
+                self.kernel_count,
+                -1,
+            ).permute(3, 0, 1, 2)
         else:
             pass
 
@@ -207,70 +279,81 @@ class ConstructKernel1d(Module):
         P = P + self.lim // 2
         Pr = P
         P = P.floor()
-        R = (Pr - P).expand(self.dilated_kernel_size[0],-1,-1,-1,-1)
-        R1 = R.select(1,0); P1 = P.select(0,0); I = self.IDX.select(1,0)
-        cond1 = (I == P1)
-        cond2 = (I == P1+1)
+        R = (Pr - P).expand(self.dilated_kernel_size[0], -1, -1, -1, -1)
+        R1 = R.select(1, 0)
+        P1 = P.select(0, 0)
+        I = self.IDX.select(1, 0)
+        cond1 = I == P1
+        cond2 = I == P1 + 1
         W1 = torch.where(cond1, 1.0, 0.0)
         W2 = torch.where(cond2, 1.0, 0.0)
         K = W1 + R1 * (W2 - W1)
         K = W * K
         K = K.sum(3)
-        K = K.permute(1,2,0)
+        K = K.permute(1, 2, 0)
         return K
 
     def forward_v1(self, W, P):
         P = P + self.lim // 2
-        X = (self.IDX - P)
+        X = self.IDX - P
         X = ((1 - X.abs()).relu()).prod(1)
-        X  = X / (X.sum(0) + 1e-7) # normalization
+        X = X / (X.sum(0) + 1e-7)  # normalization
         K = (X * W).sum(-1)
-        K = K.permute(1,2,0)
+        K = K.permute(1, 2, 0)
         return K
 
     def forward_vmax(self, W, P, SIG):
         P = P + self.lim // 2
         SIG = SIG.abs() + 1.0
-        X = (self.IDX - P)
+        X = self.IDX - P
         X = ((SIG - X.abs()).relu()).prod(1)
-        X  = X / (X.sum(0) + 1e-7) # normalization
+        X = X / (X.sum(0) + 1e-7)  # normalization
         K = (X * W).sum(-1)
-        K = K.permute(1,2,0)
+        K = K.permute(1, 2, 0)
         return K
 
     def forward_vgauss(self, W, P, SIG):
         P = P + self.lim // 2
         SIG = SIG.abs() + 0.27
         X = ((self.IDX - P) / SIG).norm(2, dim=1)
-        X = (-0.5 * X**2).exp()
-        X  = X / (X.sum(0) + 1e-7) # normalization
+        X = (-0.5 * X ** 2).exp()
+        X = X / (X.sum(0) + 1e-7)  # normalization
         K = (X * W).sum(-1)
-        K = K.permute(1,2,0)
+        K = K.permute(1, 2, 0)
         return K
 
     def forward(self, W, P, SIG):
         self.__init_tmp_variables__(W.device)
-        if self.version == 'v0':
+        if self.version == "v0":
             return self.forward_v0(W, P)
-        elif self.version == 'v1':
+        elif self.version == "v1":
             return self.forward_v1(W, P)
-        elif self.version == 'max':
+        elif self.version == "max":
             return self.forward_vmax(W, P, SIG)
-        elif self.version == 'gauss':
+        elif self.version == "gauss":
             return self.forward_vgauss(W, P, SIG)
         else:
             raise
 
     def extra_repr(self):
-        s = ('{in_channels}, {out_channels}, kernel_count={kernel_count}, version={version}')
+        s = "{in_channels}, {out_channels}, kernel_count={kernel_count}, version={version}"
         if self.dilated_kernel_size != (1,) * len(self.dilated_kernel_size):
-            s += ', dilated_kernel_size={dilated_kernel_size}'
+            s += ", dilated_kernel_size={dilated_kernel_size}"
         if self.groups != 1:
-            s += ', groups={groups}'
+            s += ", groups={groups}"
         return s.format(**self.__dict__)
 
+
 class ConstructKernel2d(Module):
-    def __init__(self, out_channels, in_channels, groups, kernel_count, dilated_kernel_size, version):
+    def __init__(
+        self,
+        out_channels,
+        in_channels,
+        groups,
+        kernel_count,
+        dilated_kernel_size,
+        version,
+    ):
         super().__init__()
         self.version = version
         self.out_channels = out_channels
@@ -283,15 +366,31 @@ class ConstructKernel2d(Module):
 
     def __init_tmp_variables__(self, device):
         if self.IDX is None or self.lim is None:
-            J = Parameter(torch.arange(0, self.dilated_kernel_size[0]), requires_grad=False).to(device)
-            I = Parameter(torch.arange(0, self.dilated_kernel_size[1]), requires_grad=False).to(device)
-            I = I.expand(self.dilated_kernel_size[0],-1)
-            J = J.expand(self.dilated_kernel_size[1],-1).t()
-            IDX = torch.cat((I.unsqueeze(0),J.unsqueeze(0)), 0)
-            IDX = IDX.expand(self.out_channels, self.in_channels//self.groups, self.kernel_count,-1,-1,-1).permute(4,5,3,0,1,2)
+            J = Parameter(
+                torch.arange(0, self.dilated_kernel_size[0]), requires_grad=False
+            ).to(device)
+            I = Parameter(
+                torch.arange(0, self.dilated_kernel_size[1]), requires_grad=False
+            ).to(device)
+            I = I.expand(self.dilated_kernel_size[0], -1)
+            J = J.expand(self.dilated_kernel_size[1], -1).t()
+            IDX = torch.cat((I.unsqueeze(0), J.unsqueeze(0)), 0)
+            IDX = IDX.expand(
+                self.out_channels,
+                self.in_channels // self.groups,
+                self.kernel_count,
+                -1,
+                -1,
+                -1,
+            ).permute(4, 5, 3, 0, 1, 2)
             self.IDX = IDX
             lim = torch.tensor(self.dilated_kernel_size).to(device)
-            self.lim = lim.expand(self.out_channels, self.in_channels//self.groups, self.kernel_count, -1).permute(3,0,1,2)
+            self.lim = lim.expand(
+                self.out_channels,
+                self.in_channels // self.groups,
+                self.kernel_count,
+                -1,
+            ).permute(3, 0, 1, 2)
         else:
             pass
 
@@ -299,76 +398,91 @@ class ConstructKernel2d(Module):
         P = P + self.lim // 2
         Pr = P
         P = P.floor()
-        R = (Pr - P).expand(self.dilated_kernel_size[0], self.dilated_kernel_size[1],-1,-1,-1,-1)
-        R1 = R.select(2,0); P1 = P.select(0,0); I = self.IDX.select(2,1)
-        R2 = R.select(2,1); P2 = P.select(0,1); J = self.IDX.select(2,0)
-        R1R2 = R1*R2
-        cond1 = (I == P1)
-        cond2 = (J == P2)
-        cond3 = (I == P1+1)
-        cond4 = (J == P2+1)
-        W1 = torch.where(cond1*cond2, 1.0, 0.0)
-        W2 = torch.where(cond1*cond4, 1.0, 0.0)
-        W3 = torch.where(cond3*cond2, 1.0, 0.0)
-        W4 = torch.where(cond3*cond4, 1.0, 0.0)
-        K = W1 + R1R2*(W1 - W2 - W3 + W4) + R1*(W3 - W1) + R2*(W2-W1)
+        R = (Pr - P).expand(
+            self.dilated_kernel_size[0], self.dilated_kernel_size[1], -1, -1, -1, -1
+        )
+        R1 = R.select(2, 0)
+        P1 = P.select(0, 0)
+        I = self.IDX.select(2, 1)
+        R2 = R.select(2, 1)
+        P2 = P.select(0, 1)
+        J = self.IDX.select(2, 0)
+        R1R2 = R1 * R2
+        cond1 = I == P1
+        cond2 = J == P2
+        cond3 = I == P1 + 1
+        cond4 = J == P2 + 1
+        W1 = torch.where(cond1 * cond2, 1.0, 0.0)
+        W2 = torch.where(cond1 * cond4, 1.0, 0.0)
+        W3 = torch.where(cond3 * cond2, 1.0, 0.0)
+        W4 = torch.where(cond3 * cond4, 1.0, 0.0)
+        K = W1 + R1R2 * (W1 - W2 - W3 + W4) + R1 * (W3 - W1) + R2 * (W2 - W1)
         K = W * K
         K = K.sum(4)
-        K = K.permute(2,3,0,1)
+        K = K.permute(2, 3, 0, 1)
         return K
 
     def forward_v1(self, W, P):
         P = P + self.lim // 2
-        X = (self.IDX - P)
+        X = self.IDX - P
         X = ((1 - X.abs()).relu()).prod(2)
-        X  = X / (X.sum((0,1)) + 1e-7) # normalization
+        X = X / (X.sum((0, 1)) + 1e-7)  # normalization
         K = (X * W).sum(-1)
-        K = K.permute(2,3,0,1)
+        K = K.permute(2, 3, 0, 1)
         return K
 
     def forward_vmax(self, W, P, SIG):
         P = P + self.lim // 2
         SIG = SIG.abs() + 1.0
-        X = (self.IDX - P)
+        X = self.IDX - P
         X = ((SIG - X.abs()).relu()).prod(2)
-        X  = X / (X.sum((0,1)) + 1e-7) # normalization
+        X = X / (X.sum((0, 1)) + 1e-7)  # normalization
         K = (X * W).sum(-1)
-        K = K.permute(2,3,0,1)
+        K = K.permute(2, 3, 0, 1)
         return K
 
     def forward_vgauss(self, W, P, SIG):
         P = P + self.lim // 2
         SIG = SIG.abs() + 0.27
         X = ((self.IDX - P) / SIG).norm(2, dim=2)
-        X = (-0.5 * X**2).exp()
-        X  = X / (X.sum((0,1)) + 1e-7) # normalization
+        X = (-0.5 * X ** 2).exp()
+        X = X / (X.sum((0, 1)) + 1e-7)  # normalization
         K = (X * W).sum(-1)
-        K = K.permute(2,3,0,1)
+        K = K.permute(2, 3, 0, 1)
         return K
 
     def forward(self, W, P, SIG):
         self.__init_tmp_variables__(W.device)
-        if self.version == 'v0':
+        if self.version == "v0":
             return self.forward_v0(W, P)
-        elif self.version == 'v1':
+        elif self.version == "v1":
             return self.forward_v1(W, P)
-        elif self.version == 'max':
+        elif self.version == "max":
             return self.forward_vmax(W, P, SIG)
-        elif self.version == 'gauss':
+        elif self.version == "gauss":
             return self.forward_vgauss(W, P, SIG)
         else:
             raise
 
     def extra_repr(self):
-        s = ('{in_channels}, {out_channels}, kernel_count={kernel_count}, version={version}')
+        s = "{in_channels}, {out_channels}, kernel_count={kernel_count}, version={version}"
         if self.dilated_kernel_size != (1,) * len(self.dilated_kernel_size):
-            s += ', dilated_kernel_size={dilated_kernel_size}'
+            s += ", dilated_kernel_size={dilated_kernel_size}"
         if self.groups != 1:
-            s += ', groups={groups}'
+            s += ", groups={groups}"
         return s.format(**self.__dict__)
 
+
 class ConstructKernel3d(Module):
-    def __init__(self, out_channels, in_channels, groups, kernel_count, dilated_kernel_size, version):
+    def __init__(
+        self,
+        out_channels,
+        in_channels,
+        groups,
+        kernel_count,
+        dilated_kernel_size,
+        version,
+    ):
         super().__init__()
         self.version = version
         self.out_channels = out_channels
@@ -381,18 +495,40 @@ class ConstructKernel3d(Module):
 
     def __init_tmp_variables__(self, device):
         if self.IDX is None or self.lim is None:
-            L = Parameter(torch.arange(0, self.dilated_kernel_size[0]), requires_grad=False).to(device)
-            J = Parameter(torch.arange(0, self.dilated_kernel_size[1]), requires_grad=False).to(device)
-            I = Parameter(torch.arange(0, self.dilated_kernel_size[2]), requires_grad=False).to(device)
-            I = I.expand(self.dilated_kernel_size[0],self.dilated_kernel_size[1],-1)
-            J = J.expand(self.dilated_kernel_size[0],self.dilated_kernel_size[2],-1).permute(0,2,1)
-            L = L.expand(self.dilated_kernel_size[1],self.dilated_kernel_size[2],-1).permute(2,0,1)
-            IDX = torch.cat((I.unsqueeze(0),J.unsqueeze(0),L.unsqueeze(0)), 0)
-            IDX = IDX.expand(self.out_channels, self.in_channels//self.groups, self.kernel_count,
-                             -1,-1,-1,-1).permute(4,5,6,3,0,1,2)
+            L = Parameter(
+                torch.arange(0, self.dilated_kernel_size[0]), requires_grad=False
+            ).to(device)
+            J = Parameter(
+                torch.arange(0, self.dilated_kernel_size[1]), requires_grad=False
+            ).to(device)
+            I = Parameter(
+                torch.arange(0, self.dilated_kernel_size[2]), requires_grad=False
+            ).to(device)
+            I = I.expand(self.dilated_kernel_size[0], self.dilated_kernel_size[1], -1)
+            J = J.expand(
+                self.dilated_kernel_size[0], self.dilated_kernel_size[2], -1
+            ).permute(0, 2, 1)
+            L = L.expand(
+                self.dilated_kernel_size[1], self.dilated_kernel_size[2], -1
+            ).permute(2, 0, 1)
+            IDX = torch.cat((I.unsqueeze(0), J.unsqueeze(0), L.unsqueeze(0)), 0)
+            IDX = IDX.expand(
+                self.out_channels,
+                self.in_channels // self.groups,
+                self.kernel_count,
+                -1,
+                -1,
+                -1,
+                -1,
+            ).permute(4, 5, 6, 3, 0, 1, 2)
             self.IDX = IDX
             lim = torch.tensor(self.dilated_kernel_size).to(device)
-            self.lim = lim.expand(self.out_channels, self.in_channels//self.groups, self.kernel_count, -1).permute(3,0,1,2)
+            self.lim = lim.expand(
+                self.out_channels,
+                self.in_channels // self.groups,
+                self.kernel_count,
+                -1,
+            ).permute(3, 0, 1, 2)
         else:
             pass
 
@@ -400,91 +536,106 @@ class ConstructKernel3d(Module):
         P = P + self.lim // 2
         Pr = P
         P = P.floor()
-        R = (Pr - P).expand(self.dilated_kernel_size[0], self.dilated_kernel_size[1], self.dilated_kernel_size[2],-1,-1,-1,-1)
-        R1 = R.select(3,0); P1 = P.select(0,0); I = self.IDX.select(3,0)
-        R2 = R.select(3,1); P2 = P.select(0,1); J = self.IDX.select(3,1)
-        R3 = R.select(3,2); P3 = P.select(0,2); L = self.IDX.select(3,2)
-        #R1R2 = R1*R2
-        #R1R3 = R1*R2
-        #R2R3 = R2*R3
-        #R1R2R3 = R1R2*R3
-        cond1 = (L == P1)
-        cond2 = (I == P2)
-        cond3 = (J == P3)
-        cond4 = (L == P1+1)
-        cond5 = (I == P2+1)
-        cond6 = (J == P3+1)
-        W1 = torch.where(cond1*cond2*cond3, 1.0, 0.0)
-        W2 = torch.where(cond4*cond2*cond3, 1.0, 0.0)
-        W3 = torch.where(cond1*cond5*cond3, 1.0, 0.0)
-        W4 = torch.where(cond4*cond5*cond3, 1.0, 0.0)
-        W5 = torch.where(cond1*cond2*cond6, 1.0, 0.0)
-        W6 = torch.where(cond4*cond2*cond6, 1.0, 0.0)
-        W7 = torch.where(cond1*cond5*cond6, 1.0, 0.0)
-        W8 = torch.where(cond4*cond5*cond6, 1.0, 0.0)
+        R = (Pr - P).expand(
+            self.dilated_kernel_size[0],
+            self.dilated_kernel_size[1],
+            self.dilated_kernel_size[2],
+            -1,
+            -1,
+            -1,
+            -1,
+        )
+        R1 = R.select(3, 0)
+        P1 = P.select(0, 0)
+        I = self.IDX.select(3, 0)
+        R2 = R.select(3, 1)
+        P2 = P.select(0, 1)
+        J = self.IDX.select(3, 1)
+        R3 = R.select(3, 2)
+        P3 = P.select(0, 2)
+        L = self.IDX.select(3, 2)
+        # R1R2 = R1*R2
+        # R1R3 = R1*R2
+        # R2R3 = R2*R3
+        # R1R2R3 = R1R2*R3
+        cond1 = L == P1
+        cond2 = I == P2
+        cond3 = J == P3
+        cond4 = L == P1 + 1
+        cond5 = I == P2 + 1
+        cond6 = J == P3 + 1
+        W1 = torch.where(cond1 * cond2 * cond3, 1.0, 0.0)
+        W2 = torch.where(cond4 * cond2 * cond3, 1.0, 0.0)
+        W3 = torch.where(cond1 * cond5 * cond3, 1.0, 0.0)
+        W4 = torch.where(cond4 * cond5 * cond3, 1.0, 0.0)
+        W5 = torch.where(cond1 * cond2 * cond6, 1.0, 0.0)
+        W6 = torch.where(cond4 * cond2 * cond6, 1.0, 0.0)
+        W7 = torch.where(cond1 * cond5 * cond6, 1.0, 0.0)
+        W8 = torch.where(cond4 * cond5 * cond6, 1.0, 0.0)
         # needs a better computing
-        K  = W1 * (1 - R1) * (1 - R2) * (1 - R3)
-        K += W2 * R1 	  * (1 - R2) * (1 - R3)
-        K += W3 * (1 - R1) * R2 	     * (1 - R3)
-        K += W4 * R1 	  * R2       * (1 - R3)
+        K = W1 * (1 - R1) * (1 - R2) * (1 - R3)
+        K += W2 * R1 * (1 - R2) * (1 - R3)
+        K += W3 * (1 - R1) * R2 * (1 - R3)
+        K += W4 * R1 * R2 * (1 - R3)
         K += W5 * (1 - R1) * (1 - R2) * R3
-        K += W6 * R1 	  * (1 - R2) * R3
-        K += W7 * (1 - R1) * R2 	     * R3
-        K += W8 * R1	  * R2 	     * R3
+        K += W6 * R1 * (1 - R2) * R3
+        K += W7 * (1 - R1) * R2 * R3
+        K += W8 * R1 * R2 * R3
         K = W * K
         K = K.sum(5)
-        K = K.permute(3,4,0,1,2)
+        K = K.permute(3, 4, 0, 1, 2)
         return K
 
     def forward_v1(self, W, P):
         P = P + self.lim // 2
-        X = (self.IDX - P)
+        X = self.IDX - P
         X = ((1 - X.abs()).relu()).prod(3)
-        X  = X / (X.sum((0,1,2)) + 1e-7) # normalization
+        X = X / (X.sum((0, 1, 2)) + 1e-7)  # normalization
         K = (X * W).sum(-1)
-        K = K.permute(3,4,0,1,2)
+        K = K.permute(3, 4, 0, 1, 2)
         return K
 
     def forward_vmax(self, W, P, SIG):
         P = P + self.lim // 2
         SIG = SIG.abs() + 1.0
-        X = (self.IDX - P)
+        X = self.IDX - P
         X = ((SIG - X.abs()).relu()).prod(3)
-        X  = X / (X.sum((0,1,2)) + 1e-7) # normalization
+        X = X / (X.sum((0, 1, 2)) + 1e-7)  # normalization
         K = (X * W).sum(-1)
-        K = K.permute(3,4,0,1,2)
+        K = K.permute(3, 4, 0, 1, 2)
         return K
 
     def forward_vgauss(self, W, P, SIG):
         P = P + self.lim // 2
         SIG = SIG.abs() + 0.27
         X = ((self.IDX - P) / SIG).norm(2, dim=3)
-        X = (-0.5 * X**2).exp()
-        X  = X / (X.sum((0,1,2)) + 1e-7) # normalization
+        X = (-0.5 * X ** 2).exp()
+        X = X / (X.sum((0, 1, 2)) + 1e-7)  # normalization
         K = (X * W).sum(-1)
-        K = K.permute(3,4,0,1,2)
+        K = K.permute(3, 4, 0, 1, 2)
         return K
 
     def forward(self, W, P, SIG):
         self.__init_tmp_variables__(W.device)
-        if self.version == 'v0':
+        if self.version == "v0":
             return self.forward_v0(W, P)
-        elif self.version == 'v1':
+        elif self.version == "v1":
             return self.forward_v1(W, P)
-        elif self.version == 'max':
+        elif self.version == "max":
             return self.forward_vmax(W, P, SIG)
-        elif self.version == 'gauss':
+        elif self.version == "gauss":
             return self.forward_vgauss(W, P, SIG)
         else:
             raise
 
     def extra_repr(self):
-        s = ('{in_channels}, {out_channels}, kernel_count={kernel_count}, version={version}')
+        s = "{in_channels}, {out_channels}, kernel_count={kernel_count}, version={version}"
         if self.dilated_kernel_size != (1,) * len(self.dilated_kernel_size):
-            s += ', dilated_kernel_size={dilated_kernel_size}'
+            s += ", dilated_kernel_size={dilated_kernel_size}"
         if self.groups != 1:
-            s += ', groups={groups}'
+            s += ", groups={groups}"
         return s.format(**self.__dict__)
+
 
 class Dcls1d(_DclsNd):
     __doc__ = r"""
@@ -532,39 +683,77 @@ class Dcls1d(_DclsNd):
         dilated_kernel_size: _size_1_t = 1,
         groups: int = 1,
         bias: bool = True,
-        padding_mode: str = 'zeros',  # TODO: refine this type
-        version: str = 'gauss'
+        padding_mode: str = "zeros",  # TODO: refine this type
+        version: str = "gauss",
     ):
         stride_ = _single(stride)
         padding_ = _single(padding)
         dilated_kernel_size_ = _single(dilated_kernel_size)
         super(Dcls1d, self).__init__(
-            in_channels, out_channels, kernel_count, stride_, padding_, dilated_kernel_size_,
-            False, _single(0), groups, bias, padding_mode, version)
+            in_channels,
+            out_channels,
+            kernel_count,
+            stride_,
+            padding_,
+            dilated_kernel_size_,
+            False,
+            _single(0),
+            groups,
+            bias,
+            padding_mode,
+            version,
+        )
 
-        self.DCK = ConstructKernel1d(self.out_channels,
-                                     self.in_channels,
-                                     self.groups,
-                                     self.kernel_count,
-                                     self.dilated_kernel_size,
-                                     self.version)
+        self.DCK = ConstructKernel1d(
+            self.out_channels,
+            self.in_channels,
+            self.groups,
+            self.kernel_count,
+            self.dilated_kernel_size,
+            self.version,
+        )
+
     def extra_repr(self):
         s = super(Dcls1d, self).extra_repr()
         return s.format(**self.__dict__)
 
-    def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor], P: Tensor, SIG: Optional[Tensor]):
-            if self.padding_mode != 'zeros':
-                return F.conv1d(F.pad(input, self._reversed_padding_repeated_twice, mode=self.padding_mode),
-                                self.DCK(weight, P, SIG), bias,
-                                self.stride, _single(0), _single(1), self.groups)
-            return F.conv1d(input, self.DCK(weight, P, SIG), bias,
-                                   self.stride, self.padding, _single(1), self.groups)
+    def _conv_forward(
+        self,
+        input: Tensor,
+        weight: Tensor,
+        bias: Optional[Tensor],
+        P: Tensor,
+        SIG: Optional[Tensor],
+    ):
+        if self.padding_mode != "zeros":
+            return F.conv1d(
+                F.pad(
+                    input, self._reversed_padding_repeated_twice, mode=self.padding_mode
+                ),
+                self.DCK(weight, P, SIG),
+                bias,
+                self.stride,
+                _single(0),
+                _single(1),
+                self.groups,
+            )
+        return F.conv1d(
+            input,
+            self.DCK(weight, P, SIG),
+            bias,
+            self.stride,
+            self.padding,
+            _single(1),
+            self.groups,
+        )
 
     def forward(self, input: Tensor) -> Tensor:
-            return self._conv_forward(input, self.weight, self.bias, self.P, self.SIG)
+        return self._conv_forward(input, self.weight, self.bias, self.P, self.SIG)
+
 
 class Dcls2d(_DclsNd):
-    __doc__ = r"""Applies a 2D convolution over an input signal composed of several input
+    __doc__ = (
+        r"""Applies a 2D convolution over an input signal composed of several input
     planes.
     In the simplest case, the output value of the layer with input size
     :math:`(N, C_{\text{in}}, H, W)` and output :math:`(N, C_{\text{out}}, H_{\text{out}}, W_{\text{out}})`
@@ -576,7 +765,8 @@ class Dcls2d(_DclsNd):
     :math:`N` is a batch size, :math:`C` denotes a number of channels,
     :math:`H` is a height of input planes in pixels, and :math:`W` is
     width in pixels.
-    """ + r"""
+    """
+        + r"""
     This module supports :ref:`TensorFloat32<tf32_on_ampere>`.
     * :attr:`stride` controls the stride for the cross-correlation, a single
       number or a tuple.
@@ -608,7 +798,8 @@ class Dcls2d(_DclsNd):
             channels to output channels. Default: 1
         bias (bool, optional): If ``True``, adds a learnable bias to the
             output. Default: ``True``
-    """ + r"""
+    """
+        + r"""
     Shape:
         - Input: :math:`(N, C_{in}, H_{in}, W_{in})`
         - Output: :math:`(N, C_{out}, H_{out}, W_{out})` where
@@ -644,6 +835,7 @@ class Dcls2d(_DclsNd):
     .. _link:
         https://github.com/vdumoulin/conv_arithmetic/blob/master/README.md
     """
+    )
 
     def __init__(
         self,
@@ -655,68 +847,120 @@ class Dcls2d(_DclsNd):
         dilated_kernel_size: _size_2_t = 1,
         groups: int = 1,
         bias: bool = True,
-        padding_mode: str = 'zeros',  # TODO: refine this type
-        version: str = 'gauss',
-        use_implicit_gemm: bool = True
+        padding_mode: str = "zeros",  # TODO: refine this type
+        version: str = "gauss",
+        use_implicit_gemm: bool = True,
     ):
         stride_ = _pair(stride)
         padding_ = _pair(padding)
         dilated_kernel_size_ = _pair(dilated_kernel_size)
         super(Dcls2d, self).__init__(
-            in_channels, out_channels, kernel_count, stride_, padding_, dilated_kernel_size_,
-            False, _pair(0), groups, bias, padding_mode, version)
+            in_channels,
+            out_channels,
+            kernel_count,
+            stride_,
+            padding_,
+            dilated_kernel_size_,
+            False,
+            _pair(0),
+            groups,
+            bias,
+            padding_mode,
+            version,
+        )
 
-        self.cond = (self.in_channels == self.out_channels == self.groups
-                and self.padding[0] ==  self.dilated_kernel_size[0] // 2
-                and self.padding[1] ==  self.dilated_kernel_size[1] // 2)
+        self.cond = (
+            self.in_channels == self.out_channels == self.groups
+            and self.padding[0] == self.dilated_kernel_size[0] // 2
+            and self.padding[1] == self.dilated_kernel_size[1] // 2
+        )
         if not torch.cuda.is_available():
-            logging.warning('DepthWiseConv2dImplicitGEMM requires cuda, switching to native conv2d')
+            logging.warning(
+                "DepthWiseConv2dImplicitGEMM requires cuda, switching to native conv2d"
+            )
         if (not install_implicit_gemm) and use_implicit_gemm:
-            logging.warning('DepthWiseConv2dImplicitGEMM not installed')
+            logging.warning("DepthWiseConv2dImplicitGEMM not installed")
         if (not self.cond) and use_implicit_gemm:
-            logging.warning('to use DepthWiseConv2dImplicitGEMM you must have: \n \
-                            (in_channels == out_channels == groups) and (padding == dilated_kernel_size // 2)')
+            logging.warning(
+                "to use DepthWiseConv2dImplicitGEMM you must have: \n \
+                            (in_channels == out_channels == groups) and (padding == dilated_kernel_size // 2)"
+            )
         if (not install_implicit_gemm) or (not self.cond):
-            logging.warning('switching to native conv2d')
-        self.use_implicit_gemm = use_implicit_gemm and install_implicit_gemm and self.cond and torch.cuda.is_available()
+            logging.warning("switching to native conv2d")
+        self.use_implicit_gemm = (
+            use_implicit_gemm
+            and install_implicit_gemm
+            and self.cond
+            and torch.cuda.is_available()
+        )
 
-        self.DCK = ConstructKernel2d(self.out_channels,
-                                     self.in_channels,
-                                     self.groups,
-                                     self.kernel_count,
-                                     self.dilated_kernel_size,
-                                     self.version)
+        self.DCK = ConstructKernel2d(
+            self.out_channels,
+            self.in_channels,
+            self.groups,
+            self.kernel_count,
+            self.dilated_kernel_size,
+            self.version,
+        )
+
     def extra_repr(self):
         s = super(Dcls2d, self).extra_repr()
         if self.use_implicit_gemm:
-            s += ', (using DepthWiseConv2dImplicitGEMM)'
+            s += ", (using DepthWiseConv2dImplicitGEMM)"
         else:
-            s += ', (using torch im2col GEMM)'
+            s += ", (using torch im2col GEMM)"
         return s.format(**self.__dict__)
 
-    def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor], P: Tensor, SIG: Optional[Tensor]):
+    def _conv_forward(
+        self,
+        input: Tensor,
+        weight: Tensor,
+        bias: Optional[Tensor],
+        P: Tensor,
+        SIG: Optional[Tensor],
+    ):
         if self.use_implicit_gemm:
             if input.dtype == torch.float32:
                 x = _DepthWiseConv2dImplicitGEMMFP32.apply(
-                    input, self.DCK(weight, P, SIG).contiguous())
+                    input, self.DCK(weight, P, SIG).contiguous()
+                )
             elif input.dtype == torch.float16:
                 x = _DepthWiseConv2dImplicitGEMMFP16(
-                    input, self.DCK(weight, P, SIG).contiguous())
+                    input, self.DCK(weight, P, SIG).contiguous()
+                )
             else:
                 raise TypeError("Only support fp32 and fp16, get {}".format(x.dtype))
             if self.bias is not None:
                 x = x + self.bias.to(x).view(1, -1, 1, 1)
             return x
         else:
-            if self.padding_mode != 'zeros':
-                return F.conv2d(F.pad(input, self._reversed_padding_repeated_twice, mode=self.padding_mode),
-                                self.DCK(weight, P, SIG), bias,
-                                self.stride, _pair(0), _pair(1), self.groups)
-            return F.conv2d(input, self.DCK(weight, P, SIG), bias,
-                                   self.stride, self.padding, _pair(1), self.groups)
+            if self.padding_mode != "zeros":
+                return F.conv2d(
+                    F.pad(
+                        input,
+                        self._reversed_padding_repeated_twice,
+                        mode=self.padding_mode,
+                    ),
+                    self.DCK(weight, P, SIG),
+                    bias,
+                    self.stride,
+                    _pair(0),
+                    _pair(1),
+                    self.groups,
+                )
+            return F.conv2d(
+                input,
+                self.DCK(weight, P, SIG),
+                bias,
+                self.stride,
+                self.padding,
+                _pair(1),
+                self.groups,
+            )
 
     def forward(self, input: Tensor) -> Tensor:
-            return self._conv_forward(input, self.weight, self.bias, self.P, self.SIG);
+        return self._conv_forward(input, self.weight, self.bias, self.P, self.SIG)
+
 
 class Dcls3d(_DclsNd):
     __doc__ = r"""
@@ -766,7 +1010,6 @@ class Dcls3d(_DclsNd):
         https://github.com/vdumoulin/conv_arithmetic/blob/master/README.md
     """
 
-
     def __init__(
         self,
         in_channels: int,
@@ -777,36 +1020,72 @@ class Dcls3d(_DclsNd):
         dilated_kernel_size: _size_3_t = 1,
         groups: int = 1,
         bias: bool = True,
-        padding_mode: str = 'zeros',  # TODO: refine this type
-        version: str = 'gauss'
+        padding_mode: str = "zeros",  # TODO: refine this type
+        version: str = "gauss",
     ):
         stride_ = _triple(stride)
         padding_ = _triple(padding)
         dilated_kernel_size_ = _triple(dilated_kernel_size)
         super(Dcls3d, self).__init__(
-            in_channels, out_channels, kernel_count, stride_, padding_, dilated_kernel_size_,
-            False, _triple(0), groups, bias, padding_mode, version)
+            in_channels,
+            out_channels,
+            kernel_count,
+            stride_,
+            padding_,
+            dilated_kernel_size_,
+            False,
+            _triple(0),
+            groups,
+            bias,
+            padding_mode,
+            version,
+        )
 
-        self.DCK = ConstructKernel3d(self.out_channels,
-                                     self.in_channels,
-                                     self.groups,
-                                     self.kernel_count,
-                                     self.dilated_kernel_size,
-                                     self.version)
+        self.DCK = ConstructKernel3d(
+            self.out_channels,
+            self.in_channels,
+            self.groups,
+            self.kernel_count,
+            self.dilated_kernel_size,
+            self.version,
+        )
+
     def extra_repr(self):
         s = super(Dcls3d, self).extra_repr()
         return s.format(**self.__dict__)
 
-    def _conv_forward(self, input: Tensor, weight: Tensor, bias: Optional[Tensor], P: Tensor, SIG: Optional[Tensor]):
-            if self.padding_mode != 'zeros':
-                return F.conv3d(F.pad(input, self._reversed_padding_repeated_twice, mode=self.padding_mode),
-                                self.DCK(weight, P, SIG), bias,
-                                self.stride, _triple(0), _triple(1), self.groups)
-            return F.conv3d(input, self.DCK(weight, P, SIG), bias,
-                                   self.stride, self.padding, _triple(1), self.groups)
+    def _conv_forward(
+        self,
+        input: Tensor,
+        weight: Tensor,
+        bias: Optional[Tensor],
+        P: Tensor,
+        SIG: Optional[Tensor],
+    ):
+        if self.padding_mode != "zeros":
+            return F.conv3d(
+                F.pad(
+                    input, self._reversed_padding_repeated_twice, mode=self.padding_mode
+                ),
+                self.DCK(weight, P, SIG),
+                bias,
+                self.stride,
+                _triple(0),
+                _triple(1),
+                self.groups,
+            )
+        return F.conv3d(
+            input,
+            self.DCK(weight, P, SIG),
+            bias,
+            self.stride,
+            self.padding,
+            _triple(1),
+            self.groups,
+        )
 
     def forward(self, input: Tensor) -> Tensor:
-            return self._conv_forward(input, self.weight, self.bias, self.P, self.SIG)
+        return self._conv_forward(input, self.weight, self.bias, self.P, self.SIG)
 
 
 class _DclsN_Md(Module):
@@ -1007,6 +1286,7 @@ class _DclsN_Md(Module):
         if not hasattr(self, "padding_mode"):
             self.padding_mode = "zeros"
 
+
 class ConstructKernel3_1d(Module):
     def __init__(
         self,
@@ -1104,3 +1384,92 @@ class ConstructKernel3_1d(Module):
         if self.groups != 1:
             s += ", groups={groups}"
         return s.format(**self.__dict__)
+
+
+class Dcls3_1d(_DclsN_Md):
+    __doc__ = r"""
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_count: int,
+        stride: _size_3_t = 1,
+        padding: _size_3_t = 0,
+        dense_kernel_size: _size_2_t = 1,
+        dilated_kernel_size: _size_1_t = 1,
+        groups: int = 1,
+        bias: bool = True,
+        padding_mode: str = "zeros",  # TODO: refine this type
+        version: str = "v1",
+    ):
+        stride_ = _triple(stride)
+        padding_ = _triple(padding)
+        dense_kernel_size_ = _pair(dense_kernel_size)
+        dilated_kernel_size_ = _single(dilated_kernel_size)
+        super(Dcls3_1d, self).__init__(
+            in_channels,
+            out_channels,
+            kernel_count,
+            stride_,
+            padding_,
+            dense_kernel_size_,
+            dilated_kernel_size_,
+            False,
+            _triple(0),
+            groups,
+            bias,
+            padding_mode,
+            version,
+        )
+
+        self.DCK = ConstructKernel3_1d(
+            self.out_channels,
+            self.in_channels,
+            self.groups,
+            self.kernel_count,
+            self.dense_kernel_size,
+            self.dilated_kernel_size,
+            self.version,
+        )
+
+    def extra_repr(self):
+        s = super(Dcls3_1d, self).extra_repr()
+        return s.format(**self.__dict__)
+
+    def _conv_forward(
+        self,
+        input: Tensor,
+        weight: Tensor,
+        bias: Optional[Tensor],
+        P: Tensor,
+        SIG: Optional[Tensor],
+    ):
+
+        if self.padding_mode != "zeros":
+            return F.conv3d(
+                F.pad(
+                    input,
+                    self._reversed_padding_repeated_twice,
+                    mode=self.padding_mode,
+                ),
+                self.DCK(weight, P, SIG),
+                bias,
+                self.stride,
+                _triple(0),
+                _triple(1),
+                self.groups,
+            )
+        return F.conv3d(
+            input,
+            self.DCK(weight, P, SIG),
+            bias,
+            self.stride,
+            self.padding,
+            _triple(1),
+            self.groups,
+        )
+
+    def forward(self, input: Tensor) -> Tensor:
+        return self._conv_forward(input, self.weight, self.bias, self.P, self.SIG)
