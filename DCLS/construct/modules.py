@@ -1006,3 +1006,101 @@ class _DclsN_Md(Module):
         super(_DclsN_Md, self).__setstate__(state)
         if not hasattr(self, "padding_mode"):
             self.padding_mode = "zeros"
+
+class ConstructKernel3_1d(Module):
+    def __init__(
+        self,
+        out_channels,
+        in_channels,
+        groups,
+        kernel_count,
+        dense_kernel_size,
+        dilated_kernel_size,
+        version,
+    ):
+        super().__init__()
+        self.version = version
+        self.out_channels = out_channels
+        self.in_channels = in_channels
+        self.groups = groups
+        self.dense_kernel_size = dense_kernel_size
+        self.dilated_kernel_size = dilated_kernel_size
+        self.kernel_count = kernel_count
+        self.IDX = None
+        self.lim = None
+
+    def __init_tmp_variables__(self, device):
+        if self.IDX is None or self.lim is None:
+            I = Parameter(
+                torch.arange(0, self.dilated_kernel_size[0]), requires_grad=False
+            ).to(device)
+            IDX = I.unsqueeze(0)
+            IDX = IDX.expand(
+                self.out_channels,
+                self.in_channels // self.groups,
+                self.kernel_count,
+                *self.dense_kernel_size,
+                -1,
+                -1,
+            ).permute(6, 3, 4, 5, 0, 1, 2)
+            self.IDX = IDX
+            lim = torch.tensor(self.dilated_kernel_size).to(device)
+            self.lim = lim.expand(
+                self.out_channels,
+                self.in_channels // self.groups,
+                self.kernel_count,
+                -1,
+            ).permute(3, 0, 1, 2)
+        else:
+            pass
+
+    def forward_v1(self, W, P):
+        P = P.permute(3, 4, 0, 1, 2, 5) + self.lim // 2
+        X = self.IDX - P
+        X = ((1 - X.abs()).relu()).prod(3)
+        X = X / (X.sum(0) + 1e-7)  # normalization
+        X = X.permute(0, 3, 4, 1, 2, 5)
+        K = (X * W).sum(-1)
+        K = K.permute(1, 2, 3, 4, 0)
+        return K
+
+    def forward_vmax(self, W, P, SIG):
+        P = P.permute(3, 4, 0, 1, 2, 5) + self.lim // 2
+        SIG = SIG.permute(3, 4, 0, 1, 2, 5).abs() + 1.0
+        X = self.IDX - P
+        X = ((SIG - X.abs()).relu()).prod(3)
+        X = X / (X.sum(0) + 1e-7)  # normalization
+        X = X.permute(0, 3, 4, 1, 2, 5)
+        K = (X * W).sum(-1)
+        K = K.permute(1, 2, 3, 4, 0)
+        return K
+
+    def forward_vgauss(self, W, P, SIG):
+        P = P.permute(3, 4, 0, 1, 2, 5) + self.lim // 2
+        SIG = SIG.permute(3, 4, 0, 1, 2, 5).abs() + 0.27
+        X = ((self.IDX - P) / SIG).norm(2, dim=3)
+        X = (-0.5 * X ** 2).exp()
+        X = X / (X.sum(0) + 1e-7)  # normalization
+        X = X.permute(0, 3, 4, 1, 2, 5)
+        K = (X * W).sum(-1)
+        K = K.permute(1, 2, 3, 4, 0)
+        return K
+
+    def forward(self, W, P, SIG):
+        self.__init_tmp_variables__(W.device)
+        if self.version == "v1":
+            return self.forward_v1(W, P)
+        elif self.version == "max":
+            return self.forward_vmax(W, P, SIG)
+        elif self.version == "gauss":
+            return self.forward_vgauss(W, P, SIG)
+        else:
+            raise
+
+    def extra_repr(self):
+        s = "{in_channels}, {out_channels}, kernel_count={kernel_count}, version={version}"
+        if self.dilated_kernel_size != (1,) * len(self.dilated_kernel_size):
+            s += ", dilated_kernel_size={dilated_kernel_size}"
+        if self.groups != 1:
+            s += ", groups={groups}"
+        return s.format(**self.__dict__)
