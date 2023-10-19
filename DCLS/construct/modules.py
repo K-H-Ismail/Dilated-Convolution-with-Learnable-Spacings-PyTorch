@@ -1402,7 +1402,7 @@ class Dcls3_1d(_DclsN_Md):
         groups: int = 1,
         bias: bool = True,
         padding_mode: str = "zeros",  # TODO: refine this type
-        version: str = "v1",
+        version: str = "gauss",
     ):
         stride_ = _triple(stride)
         padding_ = _triple(padding)
