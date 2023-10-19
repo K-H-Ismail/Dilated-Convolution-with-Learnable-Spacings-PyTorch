@@ -533,7 +533,7 @@ class Dcls1d(_DclsNd):
         groups: int = 1,
         bias: bool = True,
         padding_mode: str = 'zeros',  # TODO: refine this type
-        version: str = 'v1'
+        version: str = 'gauss'
     ):
         stride_ = _single(stride)
         padding_ = _single(padding)
@@ -656,7 +656,7 @@ class Dcls2d(_DclsNd):
         groups: int = 1,
         bias: bool = True,
         padding_mode: str = 'zeros',  # TODO: refine this type
-        version: str = 'v1',
+        version: str = 'gauss',
         use_implicit_gemm: bool = True
     ):
         stride_ = _pair(stride)
@@ -778,7 +778,7 @@ class Dcls3d(_DclsNd):
         groups: int = 1,
         bias: bool = True,
         padding_mode: str = 'zeros',  # TODO: refine this type
-        version: str = 'v1'
+        version: str = 'gauss'
     ):
         stride_ = _triple(stride)
         padding_ = _triple(padding)
