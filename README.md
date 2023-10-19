@@ -24,14 +24,20 @@ For now, the code has only been implemented on [PyTorch](https://pytorch.org/), 
 - [Contribution](#contribution)
 
 The method is described in the article [Dilated Convolution with Learnable Spacings](https://arxiv.org/abs/2112.03740v4). The Gaussian and triangle versions are described in the arXiv preprint [Dilated Convolution with Learnable Spacings: beyond bilinear interpolation](https://arxiv.org/abs/2306.00817v2).
-
 ## What's new
-**Sep 28, 2023**:
+
+**Oct 19, 2023**:
+- A new family of DCLS methods is implemented: Dcls**N**_**M**d (**N** for the convolution dimension and **M** for the number of N learnable position dimensions). We'll start by implementing the Dcls3_1d method. Currently, only the Dcls3_1d method is available. Please see the [Usage](#usage) section for a use case.
+
+  **Sep 28, 2023**:
 - 🚀 🚀 A new repository for audio classification on AudioSet using DCLS and with state-of-the-art vision models adapted to audio spectrograms. Please checkout the git repo 
 [DCLS Audio](https://github.com/K-H-Ismail/DCLS-Audio) and / or the paper [Audio classification with Dilated Convolution with Learnable Spacings](https://arxiv.org/abs/2309.13972) [![arXiv](https://img.shields.io/badge/arXiv-2309.13972-b31b1b.svg?style=plastic)](https://arxiv.org/abs/2309.13972). Models checkpoints are available !
 
 **Sep 22, 2023**:
 - 🎉 🎉 The paper on DCLS Gaussian interpolation [Dilated Convolution with Learnable Spacings: beyond bilinear interpolation](https://arxiv.org/abs/2306.00817v2) [![arXiv](https://img.shields.io/badge/arXiv-2306.00817v2-b31b1b.svg?style=plastic)](https://arxiv.org/abs/2306.00817v2) has been published at [the Differentiable Almost Everything Workshop of the 40th International Conference on Machine Learning](https://differentiable.xyz/) [[ICML2023]](https://icml.cc/Conferences/2023).
+<details>
+
+  **<summary>Previous news</summary>**
 
 **Jun 16, 2023**:
 -   A new tutorial on how to use DCLS in vision backbones is now available:
@@ -81,6 +87,7 @@ After installation of the new version 0.0.3 of DCLS, the use remains unchanged.
 
 **Sep 27, 2022**:
 -   Code release for ConvNeXt-dcls experiments. See [**ConvNeXt-dcls**](https://github.com/K-H-Ismail/ConvNeXt-dcls).
+</details>
 
 ## Installation
 
@@ -102,7 +109,7 @@ git clone https://github.com/K-H-Ismail/Dilated-Convolution-with-Learnable-Spaci
 cd Dilated-Convolution-with-Learnable-Spacings-PyTorch
 python3 -m pip install --upgrade pip
 python3 -m build 
-python3 -m pip install dist/dcls-0.0.5-py3-none-any.whl 
+python3 -m pip install dist/dcls-0.0.6-py3-none-any.whl 
 
 ```
 
@@ -170,6 +177,30 @@ print(output, m.weight.grad, m.P.grad)
 **DepthWiseConv2dImplicitGEMM for 2D-DCLS**:
 
 For 2D-DCLS, to install and enable the DepthWiseConv2dImplicitGEMM, please follow the instructions of [RepLKNet](https://github.com/DingXiaoH/RepLKNet-pytorch#use-our-efficient-large-kernel-convolution-with-pytorch). Otherwise, Pytorch's native Conv2D method will be used.
+##
+
+Dcls could also be used for kernels where position learning is restricted to a subset of dimensions chosen from the **N** kernel dimensions. A generic class called Dcls**N**_**M**d (**N** for the convolution dimension and **M** for the number of N learnable position dimensions). For now, only the Dcls3_1d method is available and could be used as follows:
+
+```python
+import torch
+from DCLS.construct.modules import  Dcls3_1d
+
+m = Dcls3_1d(
+    out_channels=32,
+    in_channels=32,
+    kernel_count=26,
+    dilated_kernel_size=11, # the dimension along which positions are learned
+    dense_kernel_size=(3, 3), # no learnable positions in these 2 dims
+    groups=1,
+    padding=(1, 1, 11 // 2),
+)
+# The last dimension of the input is always where positions are learned
+input = input = torch.randn(8, 32, 11, 11, 31)
+output = m(input)
+loss = output.sum()
+loss.backward()
+print(output.size(), m.weight.grad.size(), m.P.grad.size())
+```
 
 
 ## Device Supports
