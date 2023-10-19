@@ -27,7 +27,7 @@ The method is described in the article [Dilated Convolution with Learnable Spaci
 ## What's new
 
 **Oct 19, 2023**:
-- A new family of DCLS methods is implemented: Dcls**N**_**M**d (**N** for the convolution dimension and **M** for the number of N learnable position dimensions). We'll start by implementing the Dcls3_1d method. Currently, only the Dcls3_1d method is available. Please see the [Usage](#usage) section for a use case.
+- A new family of DCLS methods is implemented: Dcls**N**_**M**d (**N** for the convolution dimension and **M** for the number of N learnable position dimensions). Currently, only the Dcls3_1d method is available. Please see the [Usage](#usage) section for a use case.
 
   **Sep 28, 2023**:
 - 🚀 🚀 A new repository for audio classification on AudioSet using DCLS and with state-of-the-art vision models adapted to audio spectrograms. Please checkout the git repo 
@@ -195,7 +195,7 @@ m = Dcls3_1d(
     padding=(1, 1, 11 // 2),
 )
 # The last dimension of the input is always where positions are learned
-input = input = torch.randn(8, 32, 11, 11, 31)
+input = torch.randn(8, 32, 11, 11, 31)
 output = m(input)
 loss = output.sum()
 loss.backward()
