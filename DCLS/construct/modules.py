@@ -145,7 +145,7 @@ class _DclsNd(Module):
         with torch.no_grad():
             for i in range(len(self.dilated_kernel_size)):
                 lim = self.dilated_kernel_size[i] // 2
-                init.normal_(self.P.select(0,i), 0, 0.5).clamp(-lim, lim)
+                init.normal_(self.P.select(0,i), 0, 0.5).clamp_(-lim, lim)
             if self.SIG is not None:
                 if self.version == 'gauss':
                     init.constant_(self.SIG, 0.23)
