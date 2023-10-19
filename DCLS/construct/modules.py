@@ -807,3 +807,202 @@ class Dcls3d(_DclsNd):
 
     def forward(self, input: Tensor) -> Tensor:
             return self._conv_forward(input, self.weight, self.bias, self.P, self.SIG)
+
+
+class _DclsN_Md(Module):
+
+    __constants__ = [
+        "stride",
+        "padding",
+        "dense_kernel_size",
+        "dilated_kernel_size",
+        "groups",
+        "padding_mode",
+        "output_padding",
+        "in_channels",
+        "out_channels",
+        "kernel_count",
+        "version",
+    ]
+    __annotations__ = {"bias": Optional[torch.Tensor]}
+
+    def _conv_forward(
+        self, input: Tensor, weight: Tensor, bias: Optional[Tensor]
+    ) -> Tensor:
+        ...
+
+    _in_channels: int
+    out_channels: int
+    kernel_count: int
+    stride: Tuple[int, ...]
+    padding: Tuple[int, ...]
+    dense_kernel_size: Tuple[int, ...]
+    dilated_kernel_size: Tuple[int, ...]
+    transposed: bool
+    output_padding: Tuple[int, ...]
+    groups: int
+    padding_mode: str
+    weight: Tensor
+    bias: Optional[Tensor]
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_count: int,
+        stride: Tuple[int, ...],
+        padding: Tuple[int, ...],
+        dense_kernel_size: Tuple[int, ...],
+        dilated_kernel_size: Tuple[int, ...],
+        transposed: bool,
+        output_padding: Tuple[int, ...],
+        groups: int,
+        bias: bool,
+        padding_mode: str,
+        version: str,
+    ) -> None:
+        super(_DclsN_Md, self).__init__()
+        if in_channels % groups != 0:
+            raise ValueError("in_channels must be divisible by groups")
+        if out_channels % groups != 0:
+            raise ValueError("out_channels must be divisible by groups")
+        valid_padding_modes = {"zeros", "reflect", "replicate", "circular"}
+        if padding_mode not in valid_padding_modes:
+            raise ValueError(
+                "padding_mode must be one of {}, but got padding_mode='{}'".format(
+                    valid_padding_modes, padding_mode
+                )
+            )
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_count = kernel_count
+        self.stride = stride
+        self.padding = padding
+        self.dense_kernel_size = dense_kernel_size
+        self.dilated_kernel_size = dilated_kernel_size
+        self.transposed = transposed
+        self.output_padding = output_padding
+        self.groups = groups
+        self.padding_mode = padding_mode
+        self.version = version
+        # `_reversed_padding_repeated_twice` is the padding to be passed to
+        # `F.pad` if needed (e.g., for non-zero padding types that are
+        # implemented as two ops: padding + conv). `F.pad` accepts paddings in
+        # reverse order than the dimension.
+        self._reversed_padding_repeated_twice = _reverse_repeat_tuple(self.padding, 2)
+        if transposed:
+            self.weight = Parameter(
+                torch.Tensor(
+                    in_channels,
+                    out_channels // groups,
+                    *dense_kernel_size,
+                    kernel_count,
+                )
+            )
+            self.P = Parameter(
+                torch.Tensor(
+                    len(dilated_kernel_size),
+                    in_channels,
+                    out_channels // groups,
+                    *dense_kernel_size,
+                    kernel_count,
+                )
+            )
+            if version in ["gauss", "max"]:
+                self.SIG = Parameter(
+                    torch.Tensor(
+                        len(dilated_kernel_size),
+                        in_channels,
+                        out_channels // groups,
+                        *dense_kernel_size,
+                        kernel_count,
+                    )
+                )
+            else:
+                self.register_parameter("SIG", None)
+        else:
+            self.weight = Parameter(
+                torch.Tensor(
+                    out_channels,
+                    in_channels // groups,
+                    *dense_kernel_size,
+                    kernel_count,
+                )
+            )
+            self.P = Parameter(
+                torch.Tensor(
+                    len(dilated_kernel_size),
+                    out_channels,
+                    in_channels // groups,
+                    *dense_kernel_size,
+                    kernel_count,
+                )
+            )
+            if version in ["gauss", "max"]:
+                self.SIG = Parameter(
+                    torch.Tensor(
+                        len(dilated_kernel_size),
+                        out_channels,
+                        in_channels // groups,
+                        *dense_kernel_size,
+                        kernel_count,
+                    )
+                )
+            else:
+                self.register_parameter("SIG", None)
+        if bias:
+            self.bias = Parameter(torch.empty(out_channels))
+        else:
+            self.register_parameter("bias", None)
+
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        if self.bias is not None:
+            fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
+            bound = 1 / math.sqrt(fan_in)
+            init.uniform_(self.bias, -bound, bound)
+        with torch.no_grad():
+            for i in range(len(self.dilated_kernel_size)):
+                lim = self.dilated_kernel_size[i] // 2
+                # init.normal_(self.P.select(0, i), 0, 0.5).clamp_(-lim, lim)
+                # unifrom init is perhaps preferable here
+                init.uniform_(self.P.select(0, i), -lim, lim)
+            if self.SIG is not None:
+                if self.version == "gauss":
+                    init.constant_(self.SIG, 0.23)
+                else:
+                    init.constant_(self.SIG, 0.0)
+
+    def clamp_parameters(self) -> None:
+        for i in range(len(self.dilated_kernel_size)):
+            with torch.no_grad():
+                lim = self.dilated_kernel_size[i] // 2
+                self.P.select(0, i).clamp_(-lim, lim)
+
+    def extra_repr(self):
+        s = (
+            "{in_channels}, {out_channels}, kernel_count={kernel_count} (for the learnable dims)"
+            ", stride={stride}, version={version}"
+        )
+        if self.padding != (0,) * len(self.padding):
+            s += ", padding={padding}"
+        if self.dense_kernel_size != (1,) * len(self.dense_kernel_size):
+            s += ", dense_kernel_size={dense_kernel_size} (fixed)"
+        if self.dilated_kernel_size != (1,) * len(self.dilated_kernel_size):
+            s += ", dilated_kernel_size={dilated_kernel_size} (learnable)"
+        if self.output_padding != (0,) * len(self.output_padding):
+            s += ", output_padding={output_padding}"
+        if self.groups != 1:
+            s += ", groups={groups}"
+        if self.bias is None:
+            s += ", bias=False"
+        if self.padding_mode != "zeros":
+            s += ", padding_mode={padding_mode}"
+        return s.format(**self.__dict__)
+
+    def __setstate__(self, state):
+        super(_DclsN_Md, self).__setstate__(state)
+        if not hasattr(self, "padding_mode"):
+            self.padding_mode = "zeros"
