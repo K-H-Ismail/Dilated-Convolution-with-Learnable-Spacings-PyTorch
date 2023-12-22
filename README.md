@@ -26,6 +26,9 @@ For now, the code has only been implemented on [PyTorch](https://pytorch.org/), 
 The method is described in the article [Dilated Convolution with Learnable Spacings](https://arxiv.org/abs/2112.03740v4). The Gaussian and triangle versions are described in the arXiv preprint [Dilated Convolution with Learnable Spacings: beyond bilinear interpolation](https://arxiv.org/abs/2306.00817v2).
 ## What's new
 
+**Dec 22, 2023**:
+- Dcls2d could already be used with flat dilated kernel sizes ((7,1) for example). However, this introduces unnecessary position and sigma learning along the flat dimension. We introduce Dcls2dK1d where a 1D flat kernel is constructed but a 2D convolution is applied. Please see the [Usage](#usage) section for a use case.
+
 **Oct 19, 2023**:
 - A new family of DCLS methods is implemented: Dcls**N**_**M**d (**N** for the convolution dimension and **M** for the number of N learnable position dimensions). Currently, only the Dcls3_1d method is available. Please see the [Usage](#usage) section for a use case.
 
@@ -109,7 +112,7 @@ git clone https://github.com/K-H-Ismail/Dilated-Convolution-with-Learnable-Spaci
 cd Dilated-Convolution-with-Learnable-Spacings-PyTorch
 python3 -m pip install --upgrade pip
 python3 -m build 
-python3 -m pip install dist/dcls-0.0.6-py3-none-any.whl 
+python3 -m pip install dist/dcls-0.0.7-py3-none-any.whl 
 
 ```
 
@@ -196,6 +199,31 @@ m = Dcls3_1d(
 )
 # The last dimension of the input is always where positions are learned
 input = torch.randn(8, 32, 11, 11, 31)
+output = m(input)
+loss = output.sum()
+loss.backward()
+print(output.size(), m.weight.grad.size(), m.P.grad.size())
+```
+##
+
+As for flat kernels, Dcls**N**dK**M**d could be used. For now, only the Dcls2dK1d method is available and could be used as follows:
+
+```python
+import torch
+from DCLS.construct.modules import  Dcls2dK1d
+
+m = Dcls2dK1d(
+    out_channels=32,
+    in_channels=32,
+    kernel_count=3,
+    dilated_kernel_size=11,
+    flat_dim=0 # the flat dimensions dimension, here it is equivalent to torch.nn.Conv2d with kernel_size=(1,11)
+    groups=1,
+    padding=(0, 11 // 2),
+
+)
+# The last dimension of the input is always where positions are learned
+input = torch.randn(8, 32, 56, 56)
 output = m(input)
 loss = output.sum()
 loss.backward()
