@@ -55,7 +55,6 @@ convolution_notes = {
 
 
 class _DclsNd(Module):
-
     __constants__ = [
         "stride",
         "padding",
@@ -72,8 +71,7 @@ class _DclsNd(Module):
 
     def _conv_forward(
         self, input: Tensor, weight: Tensor, bias: Optional[Tensor]
-    ) -> Tensor:
-        ...
+    ) -> Tensor: ...
 
     _in_channels: int
     out_channels: int
@@ -316,7 +314,7 @@ class ConstructKernel1d(Module):
         P = P + self.lim // 2
         SIG = SIG.abs() + 0.27
         X = ((self.IDX - P) / SIG).norm(2, dim=1)
-        X = (-0.5 * X ** 2).exp()
+        X = (-0.5 * X**2).exp()
         X = X / (X.sum(0) + 1e-7)  # normalization
         K = (X * W).sum(-1)
         K = K.permute(1, 2, 0)
@@ -337,7 +335,7 @@ class ConstructKernel1d(Module):
 
     def extra_repr(self):
         s = "{in_channels}, {out_channels}, kernel_count={kernel_count}, version={version}"
-        if self.dilated_kernel_size != (1,) * len(self.dilated_kernel_size):
+        if self.dilated_kernel_size:
             s += ", dilated_kernel_size={dilated_kernel_size}"
         if self.groups != 1:
             s += ", groups={groups}"
@@ -445,7 +443,7 @@ class ConstructKernel2d(Module):
         P = P + self.lim // 2
         SIG = SIG.abs() + 0.27
         X = ((self.IDX - P) / SIG).norm(2, dim=2)
-        X = (-0.5 * X ** 2).exp()
+        X = (-0.5 * X**2).exp()
         X = X / (X.sum((0, 1)) + 1e-7)  # normalization
         K = (X * W).sum(-1)
         K = K.permute(2, 3, 0, 1)
@@ -466,7 +464,7 @@ class ConstructKernel2d(Module):
 
     def extra_repr(self):
         s = "{in_channels}, {out_channels}, kernel_count={kernel_count}, version={version}"
-        if self.dilated_kernel_size != (1,) * len(self.dilated_kernel_size):
+        if self.dilated_kernel_size:
             s += ", dilated_kernel_size={dilated_kernel_size}"
         if self.groups != 1:
             s += ", groups={groups}"
@@ -609,7 +607,7 @@ class ConstructKernel3d(Module):
         P = P + self.lim // 2
         SIG = SIG.abs() + 0.27
         X = ((self.IDX - P) / SIG).norm(2, dim=3)
-        X = (-0.5 * X ** 2).exp()
+        X = (-0.5 * X**2).exp()
         X = X / (X.sum((0, 1, 2)) + 1e-7)  # normalization
         K = (X * W).sum(-1)
         K = K.permute(3, 4, 0, 1, 2)
@@ -630,7 +628,7 @@ class ConstructKernel3d(Module):
 
     def extra_repr(self):
         s = "{in_channels}, {out_channels}, kernel_count={kernel_count}, version={version}"
-        if self.dilated_kernel_size != (1,) * len(self.dilated_kernel_size):
+        if self.dilated_kernel_size:
             s += ", dilated_kernel_size={dilated_kernel_size}"
         if self.groups != 1:
             s += ", groups={groups}"
@@ -1089,7 +1087,6 @@ class Dcls3d(_DclsNd):
 
 
 class _DclsN_Md(Module):
-
     __constants__ = [
         "stride",
         "padding",
@@ -1107,8 +1104,7 @@ class _DclsN_Md(Module):
 
     def _conv_forward(
         self, input: Tensor, weight: Tensor, bias: Optional[Tensor]
-    ) -> Tensor:
-        ...
+    ) -> Tensor: ...
 
     _in_channels: int
     out_channels: int
@@ -1287,6 +1283,98 @@ class _DclsN_Md(Module):
             self.padding_mode = "zeros"
 
 
+class ConstructKernel2_1d(Module):
+    def __init__(
+        self,
+        out_channels,
+        in_channels,
+        groups,
+        kernel_count,
+        dense_kernel_size,
+        dilated_kernel_size,
+        version,
+    ):
+        super().__init__()
+        self.version = version
+        self.out_channels = out_channels
+        self.in_channels = in_channels
+        self.groups = groups
+        self.dense_kernel_size = dense_kernel_size
+        self.dilated_kernel_size = dilated_kernel_size
+        self.kernel_count = kernel_count
+
+        I = torch.arange(0, self.dilated_kernel_size[0])
+        IDX = I.unsqueeze(0)
+        IDX = IDX.expand(
+            self.out_channels,
+            self.in_channels // self.groups,
+            self.kernel_count,
+            self.dense_kernel_size[0],
+            -1,
+            -1,
+        ).permute(5, 3, 4, 0, 1, 2)
+        lim = torch.tensor(self.dilated_kernel_size)
+        lim = lim.expand(
+            self.out_channels,
+            self.in_channels // self.groups,
+            self.kernel_count,
+            -1,
+        ).permute(3, 0, 1, 2)
+
+        self.register_buffer("IDX", IDX)
+        self.register_buffer("lim", lim)
+
+    def forward_v1(self, W, P):
+        P = P.permute(3, 0, 1, 2, 4) + self.lim // 2
+        X = self.IDX - P
+        X = ((1 - X.abs()).relu()).prod(2)
+        X = X / (X.sum(0) + 1e-7)  # normalization
+        X = X.permute(0, 2, 3, 1, 4)
+        K = (X * W).sum(-1)
+        K = K.permute(1, 2, 3, 0)
+        return K
+
+    def forward_vmax(self, W, P, SIG):
+        P = P.permute(3, 0, 1, 2, 4) + self.lim // 2
+        SIG = SIG.permute(3, 0, 1, 2, 4).abs() + 1.0
+        X = self.IDX - P
+        X = ((SIG - X.abs()).relu()).prod(2)
+        X = X / (X.sum(0) + 1e-7)  # normalization
+        X = X.permute(0, 2, 3, 1, 4)
+        K = (X * W).sum(-1)
+        K = K.permute(1, 2, 3, 0)
+        return K
+
+    def forward_vgauss(self, W, P, SIG):
+        P = P.permute(3, 0, 1, 2, 4) + self.lim // 2
+        SIG = SIG.permute(3, 0, 1, 2, 4).abs() + 1.0
+        X = ((self.IDX - P) / SIG).norm(2, dim=2)
+        X = (-0.5 * X**2).exp()
+        X = X / (X.sum(0) + 1e-7)  # normalization
+        X = X.permute(0, 2, 3, 1, 4)
+        K = (X * W).sum(-1)
+        K = K.permute(1, 2, 3, 0)
+        return K
+
+    def forward(self, W, P, SIG):
+        if self.version == "v1":
+            return self.forward_v1(W, P)
+        elif self.version == "max":
+            return self.forward_vmax(W, P, SIG)
+        elif self.version == "gauss":
+            return self.forward_vgauss(W, P, SIG)
+        else:
+            raise
+
+    def extra_repr(self):
+        s = "{in_channels}, {out_channels}, kernel_count={kernel_count}, version={version}"
+        if self.dilated_kernel_size:
+            s += ", dilated_kernel_size={dilated_kernel_size}"
+        if self.groups != 1:
+            s += ", groups={groups}"
+        return s.format(**self.__dict__)
+
+
 class ConstructKernel3_1d(Module):
     def __init__(
         self,
@@ -1359,7 +1447,7 @@ class ConstructKernel3_1d(Module):
         P = P.permute(3, 4, 0, 1, 2, 5) + self.lim // 2
         SIG = SIG.permute(3, 4, 0, 1, 2, 5).abs() + 0.27
         X = ((self.IDX - P) / SIG).norm(2, dim=3)
-        X = (-0.5 * X ** 2).exp()
+        X = (-0.5 * X**2).exp()
         X = X / (X.sum(0) + 1e-7)  # normalization
         X = X.permute(0, 3, 4, 1, 2, 5)
         K = (X * W).sum(-1)
@@ -1379,11 +1467,99 @@ class ConstructKernel3_1d(Module):
 
     def extra_repr(self):
         s = "{in_channels}, {out_channels}, kernel_count={kernel_count}, version={version}"
-        if self.dilated_kernel_size != (1,) * len(self.dilated_kernel_size):
+        if self.dilated_kernel_size:
             s += ", dilated_kernel_size={dilated_kernel_size}"
         if self.groups != 1:
             s += ", groups={groups}"
         return s.format(**self.__dict__)
+
+
+class Dcls2_1d(_DclsN_Md):
+    __doc__ = r"""
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_count: int,
+        stride: _size_2_t = 1,
+        padding: _size_2_t = 0,
+        dense_kernel_size: _size_1_t = 1,
+        dilated_kernel_size: _size_1_t = 1,
+        groups: int = 1,
+        bias: bool = True,
+        padding_mode: str = "zeros",  # TODO: refine this type
+        version: str = "gauss",
+    ):
+        stride_ = _pair(stride)
+        padding_ = _pair(padding)
+        dense_kernel_size_ = _single(dense_kernel_size)
+        dilated_kernel_size_ = _single(dilated_kernel_size)
+        super(Dcls2_1d, self).__init__(
+            in_channels,
+            out_channels,
+            kernel_count,
+            stride_,
+            padding_,
+            dense_kernel_size_,
+            dilated_kernel_size_,
+            False,
+            _pair(0),
+            groups,
+            bias,
+            padding_mode,
+            version,
+        )
+
+        self.DCK = ConstructKernel2_1d(
+            self.out_channels,
+            self.in_channels,
+            self.groups,
+            self.kernel_count,
+            self.dense_kernel_size,
+            self.dilated_kernel_size,
+            self.version,
+        )
+
+    def extra_repr(self):
+        s = super(Dcls2_1d, self).extra_repr()
+        return s.format(**self.__dict__)
+
+    def _conv_forward(
+        self,
+        input: Tensor,
+        weight: Tensor,
+        bias: Optional[Tensor],
+        P: Tensor,
+        SIG: Optional[Tensor],
+    ):
+        if self.padding_mode != "zeros":
+            return F.conv2d(
+                F.pad(
+                    input,
+                    self._reversed_padding_repeated_twice,
+                    mode=self.padding_mode,
+                ),
+                self.DCK(weight, P, SIG),
+                bias,
+                self.stride,
+                _pair(0),
+                _pair(1),
+                self.groups,
+            )
+        return F.conv2d(
+            input,
+            self.DCK(weight, P, SIG),
+            bias,
+            self.stride,
+            self.padding,
+            _pair(1),
+            self.groups,
+        )
+
+    def forward(self, input: Tensor) -> Tensor:
+        return self._conv_forward(input, self.weight, self.bias, self.P, self.SIG)
 
 
 class Dcls3_1d(_DclsN_Md):
@@ -1446,7 +1622,6 @@ class Dcls3_1d(_DclsN_Md):
         P: Tensor,
         SIG: Optional[Tensor],
     ):
-
         if self.padding_mode != "zeros":
             return F.conv3d(
                 F.pad(
@@ -1616,7 +1791,6 @@ class Dcls2dK1d(_DclsNd):
         P: Tensor,
         SIG: Optional[Tensor],
     ):
-
         if self.padding_mode != "zeros":
             return F.conv2d(
                 F.pad(
