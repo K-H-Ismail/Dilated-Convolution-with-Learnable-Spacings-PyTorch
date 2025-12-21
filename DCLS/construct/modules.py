@@ -271,7 +271,9 @@ class ConstructKernel1d(Module):
                 -1,
             ).permute(3, 0, 1, 2)
         else:
-            pass
+            if self.IDX.device != device or self.lim.device != device:
+                self.IDX = self.IDX.to(device)
+                self.lim = self.lim.to(device)
 
     def forward_v0(self, W, P):
         P = P + self.lim // 2
@@ -390,7 +392,9 @@ class ConstructKernel2d(Module):
                 -1,
             ).permute(3, 0, 1, 2)
         else:
-            pass
+            if self.IDX.device != device or self.lim.device != device:
+                self.IDX = self.IDX.to(device)
+                self.lim = self.lim.to(device)
 
     def forward_v0(self, W, P):
         P = P + self.lim // 2
@@ -528,7 +532,9 @@ class ConstructKernel3d(Module):
                 -1,
             ).permute(3, 0, 1, 2)
         else:
-            pass
+            if self.IDX.device != device or self.lim.device != device:
+                self.IDX = self.IDX.to(device)
+                self.lim = self.lim.to(device)
 
     def forward_v0(self, W, P):
         P = P + self.lim // 2
@@ -1420,7 +1426,9 @@ class ConstructKernel3_1d(Module):
                 -1,
             ).permute(3, 0, 1, 2)
         else:
-            pass
+            if self.IDX.device != device or self.lim.device != device:
+                self.IDX = self.IDX.to(device)
+                self.lim = self.lim.to(device)
 
     def forward_v1(self, W, P):
         P = P.permute(3, 4, 0, 1, 2, 5) + self.lim // 2
