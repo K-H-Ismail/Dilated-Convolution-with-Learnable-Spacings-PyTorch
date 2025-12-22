@@ -247,9 +247,7 @@ class ConstructKernel1d(Module):
         self.dilated_kernel_size = dilated_kernel_size
         self.kernel_count = kernel_count
         
-        I = Parameter(
-            torch.arange(0, self.dilated_kernel_size[0]), requires_grad=False
-        )
+        I = torch.arange(0, self.dilated_kernel_size[0])
         IDX = I.unsqueeze(0)
         IDX = IDX.expand(
             self.out_channels,
@@ -355,12 +353,8 @@ class ConstructKernel2d(Module):
         self.dilated_kernel_size = dilated_kernel_size
         self.kernel_count = kernel_count
         
-        J = Parameter(
-            torch.arange(0, self.dilated_kernel_size[0]), requires_grad=False
-        )
-        I = Parameter(
-            torch.arange(0, self.dilated_kernel_size[1]), requires_grad=False
-        )
+        J = torch.arange(0, self.dilated_kernel_size[0])
+        I = torch.arange(0, self.dilated_kernel_size[1])
         I = I.expand(self.dilated_kernel_size[0], -1)
         J = J.expand(self.dilated_kernel_size[1], -1).t()
         IDX = torch.cat((I.unsqueeze(0), J.unsqueeze(0)), 0)
@@ -479,15 +473,9 @@ class ConstructKernel3d(Module):
         self.dilated_kernel_size = dilated_kernel_size
         self.kernel_count = kernel_count
         
-        L = Parameter(
-            torch.arange(0, self.dilated_kernel_size[0]), requires_grad=False
-        )
-        J = Parameter(
-            torch.arange(0, self.dilated_kernel_size[1]), requires_grad=False
-        )
-        I = Parameter(
-            torch.arange(0, self.dilated_kernel_size[2]), requires_grad=False
-        )
+        L = torch.arange(0, self.dilated_kernel_size[0])
+        J = torch.arange(0, self.dilated_kernel_size[1])
+        I = torch.arange(0, self.dilated_kernel_size[2])
         I = I.expand(self.dilated_kernel_size[0], self.dilated_kernel_size[1], -1)
         J = J.expand(
             self.dilated_kernel_size[0], self.dilated_kernel_size[2], -1
@@ -1380,9 +1368,7 @@ class ConstructKernel3_1d(Module):
         self.dilated_kernel_size = dilated_kernel_size
         self.kernel_count = kernel_count
         
-        I = Parameter(
-            torch.arange(0, self.dilated_kernel_size[0]), requires_grad=False
-        )
+        I = torch.arange(0, self.dilated_kernel_size[0])
         IDX = I.unsqueeze(0)
         IDX = IDX.expand(
             self.out_channels,
