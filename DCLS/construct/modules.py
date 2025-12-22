@@ -246,34 +246,28 @@ class ConstructKernel1d(Module):
         self.groups = groups
         self.dilated_kernel_size = dilated_kernel_size
         self.kernel_count = kernel_count
-        self.IDX = None
-        self.lim = None
+        
+        I = Parameter(
+            torch.arange(0, self.dilated_kernel_size[0]), requires_grad=False
+        )
+        IDX = I.unsqueeze(0)
+        IDX = IDX.expand(
+            self.out_channels,
+            self.in_channels // self.groups,
+            self.kernel_count,
+            -1,
+            -1,
+        ).permute(4, 3, 0, 1, 2)
+        lim = torch.tensor(self.dilated_kernel_size)
+        lim = lim.expand(
+            self.out_channels,
+            self.in_channels // self.groups,
+            self.kernel_count,
+            -1,
+        ).permute(3, 0, 1, 2)
 
-    def __init_tmp_variables__(self, device):
-        if self.IDX is None or self.lim is None:
-            I = Parameter(
-                torch.arange(0, self.dilated_kernel_size[0]), requires_grad=False
-            ).to(device)
-            IDX = I.unsqueeze(0)
-            IDX = IDX.expand(
-                self.out_channels,
-                self.in_channels // self.groups,
-                self.kernel_count,
-                -1,
-                -1,
-            ).permute(4, 3, 0, 1, 2)
-            self.IDX = IDX
-            lim = torch.tensor(self.dilated_kernel_size).to(device)
-            self.lim = lim.expand(
-                self.out_channels,
-                self.in_channels // self.groups,
-                self.kernel_count,
-                -1,
-            ).permute(3, 0, 1, 2)
-        else:
-            if self.IDX.device != device or self.lim.device != device:
-                self.IDX = self.IDX.to(device)
-                self.lim = self.lim.to(device)
+        self.register_buffer("IDX", IDX)
+        self.register_buffer("lim", lim)
 
     def forward_v0(self, W, P):
         P = P + self.lim // 2
@@ -323,7 +317,6 @@ class ConstructKernel1d(Module):
         return K
 
     def forward(self, W, P, SIG):
-        self.__init_tmp_variables__(W.device)
         if self.version == "v0":
             return self.forward_v0(W, P)
         elif self.version == "v1":
@@ -361,40 +354,34 @@ class ConstructKernel2d(Module):
         self.groups = groups
         self.dilated_kernel_size = dilated_kernel_size
         self.kernel_count = kernel_count
-        self.IDX = None
-        self.lim = None
-
-    def __init_tmp_variables__(self, device):
-        if self.IDX is None or self.lim is None:
-            J = Parameter(
-                torch.arange(0, self.dilated_kernel_size[0]), requires_grad=False
-            ).to(device)
-            I = Parameter(
-                torch.arange(0, self.dilated_kernel_size[1]), requires_grad=False
-            ).to(device)
-            I = I.expand(self.dilated_kernel_size[0], -1)
-            J = J.expand(self.dilated_kernel_size[1], -1).t()
-            IDX = torch.cat((I.unsqueeze(0), J.unsqueeze(0)), 0)
-            IDX = IDX.expand(
-                self.out_channels,
-                self.in_channels // self.groups,
-                self.kernel_count,
-                -1,
-                -1,
-                -1,
-            ).permute(4, 5, 3, 0, 1, 2)
-            self.IDX = IDX
-            lim = torch.tensor(self.dilated_kernel_size).to(device)
-            self.lim = lim.expand(
-                self.out_channels,
-                self.in_channels // self.groups,
-                self.kernel_count,
-                -1,
-            ).permute(3, 0, 1, 2)
-        else:
-            if self.IDX.device != device or self.lim.device != device:
-                self.IDX = self.IDX.to(device)
-                self.lim = self.lim.to(device)
+        
+        J = Parameter(
+            torch.arange(0, self.dilated_kernel_size[0]), requires_grad=False
+        )
+        I = Parameter(
+            torch.arange(0, self.dilated_kernel_size[1]), requires_grad=False
+        )
+        I = I.expand(self.dilated_kernel_size[0], -1)
+        J = J.expand(self.dilated_kernel_size[1], -1).t()
+        IDX = torch.cat((I.unsqueeze(0), J.unsqueeze(0)), 0)
+        IDX = IDX.expand(
+            self.out_channels,
+            self.in_channels // self.groups,
+            self.kernel_count,
+            -1,
+            -1,
+            -1,
+        ).permute(4, 5, 3, 0, 1, 2)
+        lim = torch.tensor(self.dilated_kernel_size)
+        lim = lim.expand(
+            self.out_channels,
+            self.in_channels // self.groups,
+            self.kernel_count,
+            -1,
+        ).permute(3, 0, 1, 2)
+        
+        self.register_buffer("IDX", IDX)
+        self.register_buffer("lim", lim)
 
     def forward_v0(self, W, P):
         P = P + self.lim // 2
@@ -454,7 +441,6 @@ class ConstructKernel2d(Module):
         return K
 
     def forward(self, W, P, SIG):
-        self.__init_tmp_variables__(W.device)
         if self.version == "v0":
             return self.forward_v0(W, P)
         elif self.version == "v1":
@@ -492,49 +478,43 @@ class ConstructKernel3d(Module):
         self.groups = groups
         self.dilated_kernel_size = dilated_kernel_size
         self.kernel_count = kernel_count
-        self.IDX = None
-        self.lim = None
-
-    def __init_tmp_variables__(self, device):
-        if self.IDX is None or self.lim is None:
-            L = Parameter(
-                torch.arange(0, self.dilated_kernel_size[0]), requires_grad=False
-            ).to(device)
-            J = Parameter(
-                torch.arange(0, self.dilated_kernel_size[1]), requires_grad=False
-            ).to(device)
-            I = Parameter(
-                torch.arange(0, self.dilated_kernel_size[2]), requires_grad=False
-            ).to(device)
-            I = I.expand(self.dilated_kernel_size[0], self.dilated_kernel_size[1], -1)
-            J = J.expand(
-                self.dilated_kernel_size[0], self.dilated_kernel_size[2], -1
-            ).permute(0, 2, 1)
-            L = L.expand(
-                self.dilated_kernel_size[1], self.dilated_kernel_size[2], -1
-            ).permute(2, 0, 1)
-            IDX = torch.cat((I.unsqueeze(0), J.unsqueeze(0), L.unsqueeze(0)), 0)
-            IDX = IDX.expand(
-                self.out_channels,
-                self.in_channels // self.groups,
-                self.kernel_count,
-                -1,
-                -1,
-                -1,
-                -1,
-            ).permute(4, 5, 6, 3, 0, 1, 2)
-            self.IDX = IDX
-            lim = torch.tensor(self.dilated_kernel_size).to(device)
-            self.lim = lim.expand(
-                self.out_channels,
-                self.in_channels // self.groups,
-                self.kernel_count,
-                -1,
-            ).permute(3, 0, 1, 2)
-        else:
-            if self.IDX.device != device or self.lim.device != device:
-                self.IDX = self.IDX.to(device)
-                self.lim = self.lim.to(device)
+        
+        L = Parameter(
+            torch.arange(0, self.dilated_kernel_size[0]), requires_grad=False
+        )
+        J = Parameter(
+            torch.arange(0, self.dilated_kernel_size[1]), requires_grad=False
+        )
+        I = Parameter(
+            torch.arange(0, self.dilated_kernel_size[2]), requires_grad=False
+        )
+        I = I.expand(self.dilated_kernel_size[0], self.dilated_kernel_size[1], -1)
+        J = J.expand(
+            self.dilated_kernel_size[0], self.dilated_kernel_size[2], -1
+        ).permute(0, 2, 1)
+        L = L.expand(
+            self.dilated_kernel_size[1], self.dilated_kernel_size[2], -1
+        ).permute(2, 0, 1)
+        IDX = torch.cat((I.unsqueeze(0), J.unsqueeze(0), L.unsqueeze(0)), 0)
+        IDX = IDX.expand(
+            self.out_channels,
+            self.in_channels // self.groups,
+            self.kernel_count,
+            -1,
+            -1,
+            -1,
+            -1,
+        ).permute(4, 5, 6, 3, 0, 1, 2)
+        lim = torch.tensor(self.dilated_kernel_size)
+        lim = lim.expand(
+            self.out_channels,
+            self.in_channels // self.groups,
+            self.kernel_count,
+            -1,
+        ).permute(3, 0, 1, 2)
+        
+        self.register_buffer("IDX", IDX)
+        self.register_buffer("lim", lim)
 
     def forward_v0(self, W, P):
         P = P + self.lim // 2
@@ -620,7 +600,6 @@ class ConstructKernel3d(Module):
         return K
 
     def forward(self, W, P, SIG):
-        self.__init_tmp_variables__(W.device)
         if self.version == "v0":
             return self.forward_v0(W, P)
         elif self.version == "v1":
@@ -1400,35 +1379,29 @@ class ConstructKernel3_1d(Module):
         self.dense_kernel_size = dense_kernel_size
         self.dilated_kernel_size = dilated_kernel_size
         self.kernel_count = kernel_count
-        self.IDX = None
-        self.lim = None
-
-    def __init_tmp_variables__(self, device):
-        if self.IDX is None or self.lim is None:
-            I = Parameter(
-                torch.arange(0, self.dilated_kernel_size[0]), requires_grad=False
-            ).to(device)
-            IDX = I.unsqueeze(0)
-            IDX = IDX.expand(
-                self.out_channels,
-                self.in_channels // self.groups,
-                self.kernel_count,
-                *self.dense_kernel_size,
-                -1,
-                -1,
-            ).permute(6, 3, 4, 5, 0, 1, 2)
-            self.IDX = IDX
-            lim = torch.tensor(self.dilated_kernel_size).to(device)
-            self.lim = lim.expand(
-                self.out_channels,
-                self.in_channels // self.groups,
-                self.kernel_count,
-                -1,
-            ).permute(3, 0, 1, 2)
-        else:
-            if self.IDX.device != device or self.lim.device != device:
-                self.IDX = self.IDX.to(device)
-                self.lim = self.lim.to(device)
+        
+        I = Parameter(
+            torch.arange(0, self.dilated_kernel_size[0]), requires_grad=False
+        )
+        IDX = I.unsqueeze(0)
+        IDX = IDX.expand(
+            self.out_channels,
+            self.in_channels // self.groups,
+            self.kernel_count,
+            *self.dense_kernel_size,
+            -1,
+            -1,
+        ).permute(6, 3, 4, 5, 0, 1, 2)
+        lim = torch.tensor(self.dilated_kernel_size)
+        lim = lim.expand(
+            self.out_channels,
+            self.in_channels // self.groups,
+            self.kernel_count,
+            -1,
+        ).permute(3, 0, 1, 2)
+        
+        self.register_buffer("IDX", IDX)
+        self.register_buffer("lim", lim)
 
     def forward_v1(self, W, P):
         P = P.permute(3, 4, 0, 1, 2, 5) + self.lim // 2
@@ -1463,7 +1436,6 @@ class ConstructKernel3_1d(Module):
         return K
 
     def forward(self, W, P, SIG):
-        self.__init_tmp_variables__(W.device)
         if self.version == "v1":
             return self.forward_v1(W, P)
         elif self.version == "max":
