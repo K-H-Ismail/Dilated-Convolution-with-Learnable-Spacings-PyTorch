@@ -111,9 +111,7 @@ From [GitHub](https://github.com/K-H-Ismail/Dilated-Convolution-with-Learnable-S
 git clone https://github.com/K-H-Ismail/Dilated-Convolution-with-Learnable-Spacings-PyTorch.git
 cd Dilated-Convolution-with-Learnable-Spacings-PyTorch
 python3 -m pip install --upgrade pip
-python3 -m build 
-python3 -m pip install dist/dcls-0.1.1-py3-none-any.whl 
-
+pip install -e .
 ```
 
 **Install the last stable version from** [**PyPI**](https://pypi.org/project/DCLS/):
